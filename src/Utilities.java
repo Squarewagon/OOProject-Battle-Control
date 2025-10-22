@@ -5,7 +5,7 @@ import java.io.File;
 import java.io.IOException;
 
 // cmd to convert gif to png frames at 60 fps
-// ffmpeg -i INPUTNAME.gif -r 60 FRAMENAME%03d.png
+// ffmpeg -i INPUTNAME.mov -r 60 FRAMENAME%03d.png
 
 public class Utilities {
     static final String imgPath = "resources/images/";

@@ -1,6 +1,5 @@
 import javax.swing.*;
 import java.awt.*;
-// removed unused java.awt.RenderingHints.Key
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
@@ -8,26 +7,25 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Comparator;
-// removed unused IO imports
 
 public class Gamma extends JPanel implements ActionListener, MouseListener, MouseMotionListener, KeyListener {
 
     public static final int FRAME_TIME = 1000 / 60; // milliseconds per frame
 
     private Timer gameTimer;
-    private long lastUpdateTime;
-    private boolean gameRunning;
-    private boolean fastForward;
+    long lastUpdateTime;
+    boolean gameRunning;
+    boolean fastForward;
 
     private static Gamma gameInstance;
 
     // Simple game state for menus
-    private enum GameState {
+    enum GameState {
         MAIN_MENU, MAP_SELECT, MODE_SELECT, IN_GAME, PAUSED
     }
 
-    private GameState currentState = GameState.MAIN_MENU;
-    private String selectedMap = "plain"; // future: support more maps
+    GameState currentState = GameState.MAIN_MENU;
+    String selectedMap = "plain"; // future: support more maps
     static public String selectedMode = "normal"; // normal | survival | challenge | sandbox
 
     public static final int GAME_WIDTH = 1560; // 13/16 * 1920
@@ -36,47 +34,51 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
 
     int uiMid = 1740; // midpoint of the UI panel at 1560 + 180 or 1920 - 180
 
-    private static List<Instance> Instances;
+    private static GameManager gameManager; // REFACTORED: Central game state
+    private static GameLoop gameLoop; // REFACTORED: Timing and update logic
+    private InputManager inputManager; // REFACTORED: Input handling
+    private RenderSystem renderSystem; // REFACTORED: Rendering logic
+    private BuildingManager buildingManager; // REFACTORED: Build/repair/sell logic
+    private static List<Instance> Instances; // Delegate to gameManager
     private static List<Instance> iQueue = new ArrayList<>(); // Buffer for new instances
-    private static List<Icon> productive = new ArrayList<>();
-    private static List<Icon> offensive = new ArrayList<>();
+    static List<Icon> productive = new ArrayList<>();
+    static List<Icon> offensive = new ArrayList<>();
     private static HashMap<Class<?>, Icon> iconByClass = new HashMap<>();
-    public static int power;
-    public static int kromer;
+    public static int power; // Delegate to gameManager
+    public static int kromer; // Delegate to gameManager
 
-    private int timer = 0; // this will keeps on going each update, used for various purposes like
-                           // animations
+    private int timer = 0; // this will keeps on going each update, used for various purposes
 
     // mouse tracking
-    private int mx = -1;
-    private int my = -1;
-    private boolean m1 = false;
-    private boolean m2 = false;
-    private boolean m1Hold = false;
-    private boolean m2Hold = false;
-    private int m1Timer = 0;
-    private int m2Timer = 0;
-    private String status = "";
-    private String currentCursorName = "";
+    int mx = -1;
+    int my = -1;
+    boolean m1 = false;
+    boolean m2 = false;
+    boolean m1Hold = false;
+    boolean m2Hold = false;
+    int m1Timer = 0;
+    int m2Timer = 0;
+    String status = "";
+    String currentCursorName = "";
 
-    private String err = "";
-    private long errFadeStartTime = 0;
-    private String tabSelected = "productive";
-    private boolean showHitboxes = false;
+    String err = "";
+    long errFadeStartTime = 0;
+    String tabSelected = "productive";
+    boolean showHitboxes = false;
     public boolean buildMode = false;
-    private boolean repairMode = false;
-    private boolean sellMode = false;
+    boolean repairMode = false;
+    boolean sellMode = false;
     public static boolean getConstructor = false;
-    private Icon iconToBuild = null;
-    private Class<?> buildingToBuild = null;
-    private ArrayList<Point> turretOffsets = new ArrayList<>();
-    private ArrayList<Double> turretRanges = new ArrayList<>();
-    private int previewWidth = 0;
-    private int previewHeight = 0;
-    private boolean proOnCons = false;
-    private boolean offOnCons = false;
-    private ArrayList<Point> buildable = new ArrayList<>();
-    private ArrayList<Point> unbuildable = new ArrayList<>();
+    Icon iconToBuild = null;
+    Class<?> buildingToBuild = null;
+    ArrayList<Point> turretOffsets = new ArrayList<>();
+    ArrayList<Double> turretRanges = new ArrayList<>();
+    int previewWidth = 0;
+    int previewHeight = 0;
+    boolean proOnCons = false;
+    boolean offOnCons = false;
+    ArrayList<Point> buildable = new ArrayList<>();
+    ArrayList<Point> unbuildable = new ArrayList<>();
 
     public static int wave = 0;
 
@@ -87,19 +89,51 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
     private static final BasicStroke PREVIEW_STROKE_THICK = new BasicStroke(2);
     private static final BasicStroke PREVIEW_STROKE_THIN = new BasicStroke(1);
 
-    // TODO: add more buildings here
+    // Initialize building list from ConfigManager
     void init() {
-        new Icon(Headquarter.class, 1000000, 999999.0, 6, "highcommand", "Don't let me down", 1);
-        new Icon(PowerPlant.class, 100, 8.0, 5, "headquarter", "Generates power for your base.");
-        new Icon(OilRig.class, 500, 20.0, 3, "powerplant", "Don't let a certain country find out. Generates kromers.");
-        new Icon(AutoCannon.class, 75, 7.0, 0, "powerplant", "Basic automated turret.");
-        new Icon(RadarDish.class, 800, 25.0, 4, "powerplant oilrig", "Provide a range boost to your buildings.", 1);
-        new Icon(HeavyOrdnanceCenter.class, 800, 30.0, 5, "powerplant oilrig", "Technological advancement, armed with an artillery.");
-        new Icon(Artillery.class, 500, 23, 0, "powerplant heavyordnancecenter", "Blow stuff up from a distance.");
-
+        ConfigManager config = gameManager.getConfigManager();
+        
+        // Define the building load order for UI display
+        String[] buildingOrder = {
+            "Headquarter", "PowerPlant", "OilRig", "RadarDish", "HeavyOrdnanceCenter",
+            "AutoCannon", "LaserTower", "MissileLauncher"
+        };
+        
+        // Load buildings in defined order to ensure consistent UI display
+        for (String buildingName : buildingOrder) {
+            BuildingStats stats = config.getAllBuildingStats().get(buildingName);
+            if (stats != null) {
+                Icon icon = new Icon(stats);
+                
+                if ("productive".equals(stats.buildingType)) {
+                    productive.add(icon);
+                } else if ("offensive".equals(stats.buildingType)) {
+                    offensive.add(icon);
+                }
+                
+                iconByClass.putIfAbsent(stats.buildingClass, icon);
+            }
+        }
+        
+        // Add any buildings not in the predefined order (for mod support)
+        for (BuildingStats stats : config.getAllBuildingStats().values()) {
+            if (iconByClass.containsKey(stats.buildingClass)) {
+                continue; // Already added
+            }
+            
+            Icon icon = new Icon(stats);
+            
+            if ("productive".equals(stats.buildingType)) {
+                productive.add(icon);
+            } else if ("offensive".equals(stats.buildingType)) {
+                offensive.add(icon);
+            }
+            
+            iconByClass.putIfAbsent(stats.buildingClass, icon);
+        }
     }
 
-    private class Icon {
+    class Icon {
         Class<?> clazz;
         int cost;
         double buildTime;
@@ -113,6 +147,17 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         boolean building = false;
         double constructionTimer = 0.0;
         boolean ready = false;
+
+        // NEW: Constructor that takes BuildingStats from config
+        Icon(BuildingStats stats) {
+            this.clazz = stats.buildingClass;
+            this.cost = stats.cost;
+            this.buildTime = stats.buildTime;
+            this.buildRange = stats.buildRange;
+            this.buildLimit = stats.buildLimit;
+            this.prerequisites.addAll(stats.prerequisites);
+            this.desc = stats.description;
+        }
 
         Icon(Class<?> clazz, int cost, double buildTime, double buildRange, String prerequisites, String desc, int buildLimit) {
             this.clazz = clazz;
@@ -164,6 +209,15 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
 
     public Gamma() {
         gameInstance = this; // Set static reference
+        if (gameManager == null) gameManager = new GameManager(); // Initialize once
+        if (gameLoop == null) gameLoop = new GameLoop(gameManager); // Initialize once
+        inputManager = new InputManager(this); // REFACTORED: Initialize input manager
+        renderSystem = new RenderSystem(this); // REFACTORED: Initialize render system
+        buildingManager = new BuildingManager(this); // REFACTORED: Initialize building manager
+        
+        // Load all configuration from JSON files
+        gameManager.getConfigManager().loadConfigs();
+        
         setPreferredSize(new Dimension(1920, 1080));
         setBackground(Color.BLACK);
         setDoubleBuffered(true); // Important for smooth rendering
@@ -171,9 +225,9 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         requestFocusInWindow();
 
         // let it all begins
-        Instances = new ArrayList<>();
-        power = 0;
-        kromer = 1000;
+        Instances = gameManager.getInstances();
+        power = gameManager.getPower();
+        kromer = gameManager.getKromer();
         gameRunning = false;
         fastForward = false;
         lastUpdateTime = System.currentTimeMillis();
@@ -194,7 +248,23 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         return gameInstance;
     }
 
+    public HashMap<Class<?>, Icon> getIconByClass() {
+        return iconByClass;
+    }
+
+    public BuildingManager getBuildingManager() {
+        return buildingManager;
+    }
+
     public void startGame() {
+        // Clear previous game state
+        Instances.clear();
+        iQueue.clear();
+        Location.path.clear();
+        Location.occupancy.clear();
+        Location.buildingOccupancy.clear();
+        Location.adjacency.clear();
+        
         // Map selection (extend when new maps are added)
         if ("plain".equalsIgnoreCase(selectedMap)) {
             new Plain();
@@ -202,18 +272,13 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
             new Plain(); // fallback
         }
 
-        // Mode configuration
-        if ("normal".equalsIgnoreCase(selectedMode)) {
-            kromer = 1000;
-        } else if ("paper armor".equalsIgnoreCase(selectedMode)) {
-            kromer = 1000;
-        } else if ("blitzkrieg".equalsIgnoreCase(selectedMode)) {
-            kromer = 1000;
-        } else if ("sandbox".equalsIgnoreCase(selectedMode)) {
-            kromer = 999999;
-        }
+        // Mode configuration - set Kromer based on selected mode
+        gameManager.initializeKromerForMode(selectedMode);
+        kromer = gameManager.getKromer();
+        power = gameManager.getPower();
 
-        wave = 0;
+        gameManager.setWave(0);
+        wave = gameManager.getWave();
         fastForward = false;
         gameRunning = true;
         currentState = GameState.IN_GAME;
@@ -222,7 +287,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
     }
 
     // Return to main menu and reset runtime state
-    private void goToMainMenu() {
+    public void goToMainMenu() {
         // Stop gameplay updates
         gameRunning = false;
         fastForward = false;
@@ -237,17 +302,9 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         Location.path.clear();
 
         // Reset UI/game flags
-        buildMode = false;
-        repairMode = false;
-        sellMode = false;
+        buildingManager.clearAllModes();  // This clears buildMode, repairMode, sellMode, and preview data
         iconToBuild = null;
         buildingToBuild = null;
-        turretOffsets.clear();
-        turretRanges.clear();
-        previewWidth = 0;
-        previewHeight = 0;
-        proOnCons = false;
-        offOnCons = false;
         tabSelected = "productive";
         err = "";
 
@@ -263,9 +320,10 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
             icon.constructionTimer = 0.0;
         }
 
-        // Reset power/waves
-        power = 0;
-        wave = 0;
+        // Reset power/waves in both Gamma and GameManager
+        power = gameManager.getPower();
+        wave = gameManager.getWave();
+        gameManager.fullReset();
         WaveManager.waveActive = false;
         WaveManager.waveCompleted = false;
         WaveManager.currentCycle = 1; // Reset cycle when returning to main menu
@@ -372,15 +430,75 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
     // This is called every 16.67ms (60 times per second)
     @Override
     public void actionPerformed(ActionEvent e) {
-        long currentTime = System.currentTimeMillis();
-        float timeScale = Math.min(fastForward ? 500.0f : 1000.0f, wave == 0 ? 10.0f : 1000.0f);
-        float deltaTime = lastUpdateTime == 0 ? 0 : (currentTime - lastUpdateTime) / timeScale; // Convert to seconds
-        lastUpdateTime = currentTime;
-        timer += 1;
+        // Use GameLoop to calculate delta time and update game
+        float deltaTime = gameLoop.calculateDeltaTime(fastForward, gameManager.getWave());
+        gameLoop.tick();
+        timer = gameLoop.getTimer();
 
         if (gameRunning) {
-            updateGame(deltaTime);
+            // Update Icon construction timers
+            for (Icon icon : productive) {
+                icon.update(deltaTime);
+            }
+            for (Icon icon : offensive) {
+                icon.update(deltaTime);
+            }
+            
+            // Update game objects (instances, wave, etc.)
+            gameLoop.updateGameObjects(deltaTime, Instances, iQueue);
+            
+            // Update build mode placement
+            if (buildMode && m1 && buildingToBuild != null) {
+                int cellX = mx / Location.cellSize;
+                int cellY = my / Location.cellSize;
+                try {
+                    Instance newBuilding = (Instance) buildingToBuild.getDeclaredConstructor(int.class, int.class)
+                            .newInstance(cellX, cellY);
+                    if (add(newBuilding, true)) {
+                        iconToBuild.ready = false;
+                        buildMode = false; // exit build mode after placing
+                        buildingToBuild = null; // clear the building to build
+                        turretOffsets.clear();
+                        turretRanges.clear();
+                        previewWidth = 0;
+                        previewHeight = 0;
+                        buildable.clear();
+                        unbuildable.clear();
+                        Class<?> superClass = iconToBuild.clazz.getSuperclass();
+                        if (superClass == Productive.class) {
+                            proOnCons = false;
+                        } else if (superClass == Offensive.class) {
+                            offOnCons = false;
+                        }
+                    } else {
+                        getConstructor = true;
+                        newBuilding.destroy();
+                        getConstructor = false;
+                    }
+                } catch (Exception ex) {
+                    // Failed to create building instance
+                }
+                m1 = false; // consume the click
+            }
+            
+            // Update sell/repair mode interactions via BuildingManager
+            if ((buildingManager.isSellMode() || buildingManager.isRepairMode()) && m1) {
+                int cellX = Math.max(0, Math.min(Location.cols - 1, mx / Location.cellSize));
+                int cellY = Math.max(0, Math.min(Location.rows - 1, my / Location.cellSize));
+                
+                if (buildingManager.processCellInteraction(cellX, cellY, gameManager)) {
+                    m1 = false; // consume click once processed
+                }
+            }
+            
+            // Update cursor based on game mode
+            String wantedCursor = gameLoop.getDesiredCursor(buildMode, buildingManager.isRepairMode(), buildingManager.isSellMode());
+            if (!wantedCursor.equals(currentCursorName)) {
+                Utilities.setCustomCursor(this, wantedCursor, -16, -16);
+                currentCursorName = wantedCursor;
+            }
         }
+        
         // Debounced repaint so menus animate/respond
         repaint();
 
@@ -395,312 +513,15 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
             m2Timer++;
     }
 
-    private void updateGame(float deltaTime) {
-        // Update construction timers
-        for (Icon icon : productive) {
-            icon.update(deltaTime);
-        }
-        for (Icon icon : offensive) {
-            icon.update(deltaTime);
-        }
-
-        // Update wave system
-        WaveManager.update(deltaTime, wave);
-        int newWave = WaveManager.updateWaveCompletion(deltaTime, wave);
-        if (newWave != wave) {
-            wave = newWave;
-        }
-
-        // Apply dynamic range boost from Radar Dish (if present)
-        boolean hasRadar = false;
-        for (Instance inst : Instances) {
-            if (inst instanceof RadarDish && inst.isAlive()) {
-                hasRadar = true;
-                break;
-            }
-        }
-        double rangeBoost = hasRadar ? 1.25 : 1.0;
-        for (Instance inst : Instances) {
-            if (inst instanceof Building) {
-                inst.rangeMult = rangeBoost;
-            }
-        }
-
-        // Sell/repair interaction via fast grid lookup (only when modes active)
-        if ((sellMode || repairMode) && m1) {
-            int cellX = Math.max(0, Math.min(Location.cols - 1, mx / Location.cellSize));
-            int cellY = Math.max(0, Math.min(Location.rows - 1, my / Location.cellSize));
-            Building target = Location.buildingOccupancy.get(new Point(cellX, cellY));
-            if (target != null) {
-                if (sellMode && !(target instanceof Headquarter)) {
-                    Icon icon = iconByClass.get(target.getClass());
-                    if (icon != null) {
-                        int refund = (int) (icon.cost * 0.5f * (target.health / (float) target.maxHealth));
-                        kromer += refund;
-                        target.destroy();
-                    }
-                } else if (repairMode) {
-                    if (target.health >= target.maxHealth) {
-                        error("already max health");
-                    } else {
-                        target.repairing = !target.repairing;
-                    }
-                }
-                m1 = false; // consume click once processed
-            }
-        }
-
-
-
-        for (Instance instance : Instances) {
-
-            if (instance.isAlive()) {
-                instance.update(deltaTime);
-                instance.routine(deltaTime); // like update, but will be used for something every instances have to do
-                for (Turret turret : instance.turrets) {
-                    turret.update(deltaTime);
-                }
-                for (Prop prop : instance.props) {
-                    prop.update(deltaTime);
-                }
-                for (Weapon weapon : instance.weapons) {
-                    weapon.update(deltaTime);
-                }
-                for (Utilities.Animation anim : instance.anims) {
-                    anim.update(deltaTime);
-                }
-                // Remove dead animations
-                instance.anims.removeIf(anim -> !anim.isAlive());
-            }
-        }
-        if (!iQueue.isEmpty()) {
-            Instances.addAll(iQueue);
-            iQueue.clear();
-        }
-        Instances.removeIf(instance -> !instance.isAlive());
-
-        // update cursor if needed (debounced)
-        String wantedCursor = "normal_cursor";
-        if (buildMode) {
-            wantedCursor = "normal_cursor"; // placeholder for build cursor
-        } else if (repairMode) {
-            wantedCursor = "repair_cursor";
-        } else if (sellMode) {
-            wantedCursor = "sell_cursor";
-        }
-        if (!wantedCursor.equals(currentCursorName)) {
-            Utilities.setCustomCursor(this, wantedCursor, -16, -16);
-            currentCursorName = wantedCursor;
-        }
-    }
+    // DEPRECATED: updateGame logic now handled by GameLoop and actionPerformed
 
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
         Graphics2D g2d = (Graphics2D) g;
-
-        // Enable anti-aliasing for smoother graphics
-        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-        // Menus vs. Game (treat PAUSED separately)
-        if (currentState != GameState.IN_GAME && currentState != GameState.PAUSED) {
-            g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 64f));
-            g2d.setColor(Color.WHITE);
-            String title = "Battle Control";
-            FontMetrics tfm = g2d.getFontMetrics();
-            g2d.drawString(title, (1920 - tfm.stringWidth(title)) / 2, 220);
-
-            // Shared button image (drawn at original size; top-left anchored)
-            BufferedImage btnImg = Utilities.load("menu_button", 1.0, 1.0);
-            int btnW = btnImg != null ? btnImg.getWidth() : 300;
-            int btnH = btnImg != null ? btnImg.getHeight() : 60;
-            int vGap = btnH + 24; // vertical spacing between buttons
-            int bx = 810; // chosen left offset for all menu buttons (top-left placement)
-
-            g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 28f));
-            FontMetrics bfm = g2d.getFontMetrics();
-
-            if (currentState == GameState.MAIN_MENU) {
-                int byStart = 420;
-                int byExit = byStart + vGap;
-
-                // Draw buttons
-                if (btnImg != null)g2d.drawImage(btnImg, bx, byStart, null);
-                if (btnImg != null)g2d.drawImage(btnImg, bx, byExit, null);
-
-                // Optional text overlay (centered horizontally and vertically)
-                String startText = "Start";
-                String exitText = "Exit";
-                g2d.setColor(Color.WHITE);
-                g2d.drawString(startText,bx + (btnW - bfm.stringWidth(startText)) / 2,byStart + (btnH - (bfm.getAscent() + bfm.getDescent())) / 2 + bfm.getAscent());
-                g2d.drawString(exitText,bx + (btnW - bfm.stringWidth(exitText)) / 2,byExit + (btnH - (bfm.getAscent() + bfm.getDescent())) / 2 + bfm.getAscent());
-
-                Rectangle startRect = new Rectangle(bx, byStart, btnW, btnH);
-                Rectangle exitRect = new Rectangle(bx, byExit, btnW, btnH);
-
-                if (m1) {
-                    if (startRect.contains(mx, my)) {
-                        currentState = GameState.MAP_SELECT;
-                        m1 = false;
-                        return;
-                    } else if (exitRect.contains(mx, my)) {
-                        System.exit(0);
-                    }
-                }
-            } else if (currentState == GameState.MAP_SELECT) {
-                String prompt = "Select Map";
-                g2d.drawString(prompt, (1920 - bfm.stringWidth(prompt)) / 2, 320);
-
-                int byPlain = 420;
-                int byBack = byPlain + vGap;
-
-                if (btnImg != null)g2d.drawImage(btnImg, bx, byPlain, null);
-                if (btnImg != null)g2d.drawImage(btnImg, bx, byBack, null);
-
-                g2d.setColor(Color.WHITE);
-                g2d.drawString("Plain",bx + (btnW - bfm.stringWidth("Plain")) / 2, byPlain + (btnH - (bfm.getAscent() + bfm.getDescent())) / 2 + bfm.getAscent());
-                g2d.drawString("Back",bx + (btnW - bfm.stringWidth("Back")) / 2,byBack + (btnH - (bfm.getAscent() + bfm.getDescent())) / 2 + bfm.getAscent());
-
-                Rectangle plainRect = new Rectangle(bx, byPlain, btnW, btnH);
-                Rectangle backRect = new Rectangle(bx, byBack, btnW, btnH);
-
-                if (m1) {
-                    if (plainRect.contains(mx, my)) {
-                        selectedMap = "plain";
-                        currentState = GameState.MODE_SELECT;
-                        m1 = false;
-                        return;
-                    } else if (backRect.contains(mx, my)) {
-                        currentState = GameState.MAIN_MENU;
-                        m1 = false;
-                        return;
-                    }
-                }
-            } else if (currentState == GameState.MODE_SELECT) {
-                String prompt = "Select Mode";
-                g2d.drawString(prompt, (1920 - bfm.stringWidth(prompt)) / 2, 320);
-
-                String[] modes = new String[] { "Normal", "Paper Armor", "Blitzkrieg", "Sandbox" };
-                int by = 420;
-                ArrayList<Rectangle> modeRects = new ArrayList<>();
-                for (int i = 0; i < modes.length; i++) {
-                    int y = by + i * vGap;
-                    if (btnImg != null)g2d.drawImage(btnImg, bx, y, null);
-                    g2d.setColor(Color.WHITE);
-                    g2d.drawString(modes[i],bx + (btnW - bfm.stringWidth(modes[i])) / 2,y + (btnH - (bfm.getAscent() + bfm.getDescent())) / 2 + bfm.getAscent());
-                    modeRects.add(new Rectangle(bx, y, btnW, btnH));
-                }
-
-                int yBack = by + modes.length * vGap;
-                if (btnImg != null)g2d.drawImage(btnImg, bx, yBack, null);
-                g2d.setColor(Color.WHITE);
-                g2d.drawString("Back",bx + (btnW - bfm.stringWidth("Back")) / 2,yBack + (btnH - (bfm.getAscent() + bfm.getDescent())) / 2 + bfm.getAscent());
-                Rectangle backRect = new Rectangle(bx, yBack, btnW, btnH);
-
-                if (m1) {
-                    // mode clicks
-                    for (int i = 0; i < modes.length; i++) {
-                        if (modeRects.get(i).contains(mx, my)) {
-                            selectedMode = modes[i].toLowerCase();
-                            startGame();
-                            m1 = false;
-                            return;
-                        }
-                    }
-                    // back
-                    if (backRect.contains(mx, my)) {
-                        currentState = GameState.MAP_SELECT;
-                        m1 = false;
-                        return;
-                    }
-                }
-            }
-            return;
-        }
-
-        if (currentState == GameState.PAUSED) {
-            // Draw frozen game underneath
-            drawGameArea(g2d);
-            buildMode(g2d);
-            drawUIPanel(g2d);
-
-            // Dim overlay
-            Composite orig = g2d.getComposite();
-            g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
-            g2d.setColor(Color.BLACK);
-            g2d.fillRect(0, 0, 1920, 1080);
-            g2d.setComposite(orig);
-
-            // Optional background image centered at 960, 540
-            BufferedImage pauseImg = Utilities.load("pause_ui", 1.0, 1.0);
-            if (pauseImg != null) {
-                g2d.drawImage(pauseImg, 960 - pauseImg.getWidth() / 2, 540 - pauseImg.getHeight() / 2, null);
-            }
-
-            // Title
-            g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 40f));
-            FontMetrics titleFm = g2d.getFontMetrics();
-            String title = "Paused";
-            int titleX = (1920 - titleFm.stringWidth(title)) / 2;
-            int titleY = 420;
-            g2d.setColor(Color.WHITE);
-            g2d.drawString(title, titleX, titleY);
-
-            // Image buttons (top-left anchored), no stretching
-            BufferedImage btnImg = Utilities.load("pause_button", 1.0, 1.0);
-            int btnW = btnImg != null ? btnImg.getWidth() : 220;
-            int btnH = btnImg != null ? btnImg.getHeight() : 56;
-            int bx = 850; // chosen left offset for pause buttons
-            int topY = 470;
-            int vGap = btnH + 20;
-
-            g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 28f));
-            FontMetrics fm = g2d.getFontMetrics();
-
-            // Draw three buttons
-            if (btnImg != null)g2d.drawImage(btnImg, bx, topY, null);
-            if (btnImg != null)g2d.drawImage(btnImg, bx, topY + vGap, null);
-            if (btnImg != null)g2d.drawImage(btnImg, bx, topY + vGap * 2, null);
-
-            // Text overlays centered relative to button image size
-            String contText = "Continue";
-            String menuText = "Menu";
-            String quitText = "Quit";
-            g2d.setColor(Color.WHITE);
-
-            g2d.drawString(contText,bx + (btnW - fm.stringWidth(contText)) / 2,topY + (btnH - (fm.getAscent() + fm.getDescent())) / 2 + fm.getAscent());
-            g2d.drawString(menuText,bx + (btnW - fm.stringWidth(menuText)) / 2,topY + vGap + (btnH - (fm.getAscent() + fm.getDescent())) / 2 + fm.getAscent());
-            g2d.drawString(quitText,bx + (btnW - fm.stringWidth(quitText)) / 2,topY + vGap * 2 + (btnH - (fm.getAscent() + fm.getDescent())) / 2 + fm.getAscent());
-
-            Rectangle continueRect = new Rectangle(bx, topY, btnW, btnH);
-            Rectangle menuRect = new Rectangle(bx, topY + vGap, btnW, btnH);
-            Rectangle quitRect = new Rectangle(bx, topY + vGap * 2, btnW, btnH);
-
-            if (m1) {
-                if (continueRect.contains(mx, my)) {
-                    currentState = GameState.IN_GAME;
-                    gameRunning = true;
-                    lastUpdateTime = System.currentTimeMillis();
-                    m1 = false;
-                } else if (menuRect.contains(mx, my)) {
-                    goToMainMenu();
-                    m1 = false;
-                } else if (quitRect.contains(mx, my)) {
-                    System.exit(0);
-                }
-            }
-
-            return;
-        }
-
-        // 13:9 (in-game)
-        drawGameArea(g2d);
-
-        // build mode preview
-        buildMode(g2d);
-
-        // 3:9
-        drawUIPanel(g2d);
+        
+        // Delegate all rendering to RenderSystem
+        renderSystem.render(g2d);
     }
 
     public static void main(String[] args) {
@@ -922,7 +743,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         // draw wave button and info
         g2d.setColor(Color.WHITE);
         String buttonText;
-        if (wave == 0) {
+        if (gameManager.getWave() == 0) {
             buttonText = "Start Wave 1";
         } else if (WaveManager.waveActive) {
             buttonText = fastForward ? "Fast Forward ON" : "Fast Forward OFF";
@@ -936,22 +757,23 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         fm = g2d.getFontMetrics();
 
         String waveDisplay;
-        if (wave == 0) {
+        if (gameManager.getWave() == 0) {
             waveDisplay = "Intermission";
         } else if (WaveManager.waveCompleted) {
             waveDisplay = "Wave " + WaveManager.conqueredWave + " Completed!";
         } else {
-            waveDisplay = "Wave: " + wave;
+            waveDisplay = "Wave: " + gameManager.getWave();
         }
         g2d.drawString(waveDisplay, uiMid - fm.stringWidth(waveDisplay) / 2, 1010);
 
         if (mx >= uiMid - 130 && mx <= uiMid + 130 && my >= 930 && my <= 967) {
             // mouse over start wave button, or other function after starting the wave
-            if (m1 && wave == 0 && !WaveManager.waveActive) {
+            if (m1 && gameManager.getWave() == 0 && !WaveManager.waveActive) {
                 // Start wave 1 from intermission
-                wave = 1;
+                gameManager.setWave(1);
+                wave = gameManager.getWave();
                 WaveManager.startWave(wave);
-            } else if (m1 && wave > 0) {
+            } else if (m1 && gameManager.getWave() > 0) {
                 // Toggle fast forward for waves after wave 1
                 fastForward = !fastForward;
             }
@@ -964,9 +786,29 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
     }
 
     // small error message function
-    private void error(String message) {
+    public void error(String message) {
         err = message;
         errFadeStartTime = 0; // reset fade timer
+    }
+
+    /**
+     * Sell a building and return the refund amount to the player
+     * @param building the building to sell
+     * @return true if the sale was successful
+     */
+    public boolean sellBuilding(Building building) {
+        if (building instanceof Headquarter) {
+            return false; // Cannot sell HQ
+        }
+        
+        Icon icon = iconByClass.get(building.getClass());
+        if (icon != null) {
+            int refund = (int) (icon.cost * 0.5f * (building.health / (float) building.maxHealth));
+            gameManager.addKromer(refund);
+            building.destroy();
+            return true;
+        }
+        return false;
     }
 
     private void buildingList(Graphics2D g2d) {
@@ -978,8 +820,6 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
 
         // Track hovered icon to draw tooltip last
         Icon hoveredIcon = null;
-        int hoveredX = 0;
-        int hoveredY = 0;
 
         int visibleIndex = 0;
         for (Icon icon : iconsToDraw) {
@@ -1081,8 +921,6 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
             // Store hovered icon to draw tooltip after all icons are drawn
             if (mouseOver && currentState != GameState.PAUSED) {
                 hoveredIcon = icon;
-                hoveredX = x;
-                hoveredY = y;
             }
             
             if (mouseOver && m1) {
@@ -1118,7 +956,8 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
                     repairMode = false;
                     buildMode = false;
                     icon.construct();
-                    kromer -= icon.cost;
+                    gameManager.addKromer(-icon.cost);
+                    kromer = gameManager.getKromer();
                 } else if (icon.ready) {
                     sellMode = false;
                     repairMode = false;
@@ -1163,7 +1002,8 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
                     } else if (superClass == Offensive.class) {
                         offOnCons = false;
                     }
-                    kromer += icon.cost; // refund
+                    gameManager.addKromer(icon.cost); // refund
+                    kromer = gameManager.getKromer();
                 }
                 m2 = false;
             }
@@ -1304,86 +1144,6 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         return true;
     }
 
-    private void buildMode(Graphics2D g2d) {
-        if (!buildMode)
-            return;
-        g2d.setColor(BUILDABLE_COLOR);
-        for (Point p : buildable) {
-            g2d.fillRect(p.x * Location.cellSize, p.y * Location.cellSize, Location.cellSize, Location.cellSize);
-        }
-        g2d.setColor(UNBUILDABLE_COLOR);
-        for (Point p : unbuildable) {
-            g2d.fillRect(p.x * Location.cellSize, p.y * Location.cellSize, Location.cellSize, Location.cellSize);
-        }
-        if (status != "game" || buildingToBuild == null)
-            return;
-
-        // Use cached building dimensions (no reflection needed)
-        int cellX = mx / Location.cellSize;
-        int cellY = my / Location.cellSize;
-        g2d.setColor(PREVIEW_COLOR);
-        g2d.setStroke(PREVIEW_STROKE_THICK);
-        g2d.drawRect(cellX * Location.cellSize, cellY * Location.cellSize,
-                previewWidth * Location.cellSize, previewHeight * Location.cellSize);
-
-        // range
-        g2d.setColor(PREVIEW_COLOR);
-        g2d.setStroke(PREVIEW_STROKE_THIN);
-        for (int i = 0; i < turretOffsets.size() && i < turretRanges.size(); i++) {
-            Point offset = turretOffsets.get(i);
-            // Check if radar dish exists for preview boost
-            boolean hasRadar = false;
-            for (Instance inst : Instances) {
-                if (inst instanceof RadarDish && inst.isAlive()) {
-                    hasRadar = true;
-                    break;
-                }
-            }
-            double range = turretRanges.get(i) * (hasRadar ? 1.25 : 1.0);
-            int buildingCenterX = cellX * Location.cellSize + (previewWidth * Location.cellSize) / 2;
-            int buildingCenterY = cellY * Location.cellSize + (previewHeight * Location.cellSize) / 2;
-            int turretX = buildingCenterX + offset.x;
-            int turretY = buildingCenterY + offset.y;
-
-            // Draw range circle
-            int rangeRadius = (int) (range * Location.cellSize);
-            g2d.drawOval(turretX - rangeRadius, turretY - rangeRadius, rangeRadius * 2, rangeRadius * 2);
-        }
-        if (m1) {
-            // Place the building
-            try {
-                Instance newBuilding = (Instance) buildingToBuild.getDeclaredConstructor(int.class, int.class)
-                        .newInstance(cellX, cellY);
-                if (add(newBuilding, true)) {
-                    iconToBuild.ready = false;
-                    buildMode = false; // exit build mode after placing
-                    buildingToBuild = null; // clear the building to build
-                    turretOffsets.clear();
-                    turretRanges.clear();
-                    previewWidth = 0;
-                    previewHeight = 0;
-                    buildable.clear();
-                    unbuildable.clear();
-                    Class<?> superClass = iconToBuild.clazz.getSuperclass();
-                    if (superClass == Productive.class) {
-                        proOnCons = false;
-                    } else if (superClass == Offensive.class) {
-                        offOnCons = false;
-                    }
-                    // draw a blue rectangle that gradually fade after building placed
-                    
-                } else {
-                    getConstructor = true;
-                    newBuilding.destroy();
-                    getConstructor = false;
-                }
-            } catch (Exception e) {
-                // Failed to create building instance
-            }
-            m1 = false;
-        }
-    }
-
     // this method will be used globally to update buildable cells in build mode
     public void refresh() {
         buildable.clear();
@@ -1478,144 +1238,47 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
 
     @Override
     public void keyPressed(KeyEvent e) {
+        inputManager.handleKeyPressed(e);
     }
 
     @Override
     public void keyReleased(KeyEvent e) {
-        if (currentState == GameState.PAUSED && e.getKeyCode() != KeyEvent.VK_ESCAPE) {
-            return; // ignore non-ESC keys when paused
-        }
-        switch (e.getKeyCode()) {
-            case KeyEvent.VK_H:
-                showHitboxes = !showHitboxes;
-                break;
-            case KeyEvent.VK_ESCAPE:
-                if (currentState == GameState.IN_GAME) {
-                    currentState = GameState.PAUSED;
-                    gameRunning = false; // freeze updates
-                } else if (currentState == GameState.PAUSED) {
-                    currentState = GameState.IN_GAME;
-                    gameRunning = true; // resume updates
-                    lastUpdateTime = System.currentTimeMillis();
-                }
-                break;
-            case KeyEvent.VK_Z:
-                if (sellMode)
-                    sellMode = false; // cannot be both
-                repairMode = !repairMode;
-                if (repairMode) {
-                    buildMode = false; // exit build mode if entering repair mode
-                }
-                break;
-            case KeyEvent.VK_X:
-                if (repairMode)
-                    repairMode = false; // cannot be both
-                sellMode = !sellMode;
-                if (sellMode) {
-                    buildMode = false; // exit build mode if entering sell mode
-                }
-                break;
-        }
+        inputManager.handleKeyReleased(e);
     }
 
     @Override
     public void mouseClicked(MouseEvent e) {
+        inputManager.handleMouseClicked(e);
     }
 
     @Override
     public void mousePressed(MouseEvent e) {
-        // Menus first (main menu, map select, mode select only) - handled in
-        // paintComponent
-        if (currentState != GameState.IN_GAME && currentState != GameState.PAUSED) {
-            if (SwingUtilities.isLeftMouseButton(e)) {
-                m1 = true;
-                m1Hold = true;
-            }
-            if (SwingUtilities.isRightMouseButton(e)) {
-                m2 = true;
-                m2Hold = true;
-            }
-            return;
-        }
-
-        // Paused state: set mouse flags but let paintComponent handle logic
-        if (currentState == GameState.PAUSED) {
-            if (SwingUtilities.isLeftMouseButton(e)) {
-                m1 = true;
-                m1Hold = true;
-            }
-            if (SwingUtilities.isRightMouseButton(e)) {
-                m2 = true;
-                m2Hold = true;
-            }
-            return;
-        }
-
-        // In-game UI interactions
-        if (mx >= 1591 && mx <= uiMid && my >= 168 && my <= 200) {
-            tabSelected = "productive";
-        } else if (mx >= uiMid && mx <= uiMid + 130 && my >= 168 && my <= 200) {
-            tabSelected = "offensive";
-        }
-        if (SwingUtilities.isLeftMouseButton(e)) {
-            m1 = true;
-            m1Hold = true;
-        }
-        if (SwingUtilities.isRightMouseButton(e)) {
-            m2 = true;
-            m2Hold = true;
-            repairMode = false;
-            sellMode = false;
-            if (buildMode) {
-                buildMode = false; // exit build mode on right click
-                buildingToBuild = null; // clear the building to build
-                turretOffsets.clear();
-                turretRanges.clear();
-                previewWidth = 0;
-                previewHeight = 0;
-            }
-        }
+        inputManager.handleMousePressed(e);
     }
 
     @Override
     public void mouseReleased(MouseEvent e) {
-        if (SwingUtilities.isLeftMouseButton(e)) {
-            m1Timer = 0;
-            m1Hold = false;
-        }
-        if (SwingUtilities.isRightMouseButton(e)) {
-            m2Timer = 0;
-            m2Hold = false;
-        }
+        inputManager.handleMouseReleased(e);
     }
 
     @Override
     public void mouseEntered(MouseEvent e) {
+        inputManager.handleMouseEntered(e);
     }
 
     @Override
     public void mouseExited(MouseEvent e) {
+        inputManager.handleMouseExited(e);
     }
 
     @Override
     public void mouseDragged(MouseEvent e) {
-        mx = e.getX();
-        my = e.getY();
-        if (mx >= 0 && mx < GAME_WIDTH && my >= 0 && my < HEIGHT)
-            status = "game";
-        else
-            status = "ui";
+        inputManager.handleMouseDragged(e);
     }
 
     @Override
     public void mouseMoved(MouseEvent e) {
-        mx = e.getX();
-        my = e.getY();
-        if (mx >= 0 && mx < GAME_WIDTH && my >= 0 && my < HEIGHT)
-            status = "game";
-        else
-            status = "ui";
-
+        inputManager.handleMouseMoved(e);
     }
 }
 
@@ -1914,22 +1577,26 @@ abstract class Building extends Instance {
                 occupiedCells.add(new Point(x + i, y + j));
             }
         }
-        if (Gamma.getConstructor != true)
-            Gamma.power += power;
+        if (Gamma.getConstructor != true) {
+            GameManager.getInstance().addPower(power);
+            Gamma.power = GameManager.getInstance().getPower();
+        }
         updateHitboxes();
     }
 
     void update(float deltaTime) {
-        if (Gamma.wave > 0) {
+        if (GameManager.getInstance().getWave() > 0) {
             kromerTimer += deltaTime;
             if (this instanceof Headquarter) {
                 if (kromerTimer >= 10.0) {
-                    Gamma.kromer += 10;
+                    GameManager.getInstance().addKromer(10);
+                    Gamma.kromer = GameManager.getInstance().getKromer();
                     kromerTimer = 0;
                 }
             } else if (this instanceof OilRig) {
                 if (kromerTimer >= 7.0) {
-                    Gamma.kromer += 15;
+                    GameManager.getInstance().addKromer(15);
+                    Gamma.kromer = GameManager.getInstance().getKromer();
                     kromerTimer = 0;
                 }
             }
@@ -1942,8 +1609,9 @@ abstract class Building extends Instance {
                 return;
             }
             repairTimer += deltaTime;
-            if (repairTimer >= 0.2 && Gamma.kromer > 0) {
-                Gamma.kromer -= 1;
+            if (repairTimer >= 0.2 && GameManager.getInstance().getKromer() > 0) {
+                GameManager.getInstance().addKromer(-1);
+                Gamma.kromer = GameManager.getInstance().getKromer();
                 health += 2;
                 repairTimer = 0;
             }
@@ -1993,7 +1661,8 @@ abstract class Building extends Instance {
 
         turrets.clear();
         props.clear();
-        Gamma.power -= this.power;
+        GameManager.getInstance().addPower(-this.power);
+        Gamma.power = GameManager.getInstance().getPower();
         alive = false;
 
         // Update build mode cells
@@ -2325,7 +1994,8 @@ class Recon extends Enemy {
         alive = false;
         turrets.clear();
         props.clear();
-        Gamma.kromer += 5;
+        GameManager.getInstance().addKromer(5);
+        Gamma.kromer = GameManager.getInstance().getKromer();
     }
 }
 
@@ -2416,7 +2086,7 @@ class Turret extends Attachment {
 
     @Override
     void update(float deltaTime) {
-        if (Gamma.power < 0 && parent instanceof Building) {
+        if (GameManager.getInstance().getPower() < 0 && parent instanceof Building) {
             deltaTime = deltaTime / 2;
         }
         if (parent instanceof Enemy) {
@@ -2508,7 +2178,7 @@ class Turret extends Attachment {
         } else if (parent instanceof Building) {
             if (isTargeting) {
                 if (eTarget == null || !eTarget.isAlive() || Math.sqrt(Math.pow(eTarget.exactX - exactX, 2)
-                        + Math.pow(eTarget.exactY - exactY, 2)) > range * Location.cellSize) {
+                        + Math.pow(eTarget.exactY - exactY, 2)) > range * parent.rangeMult * Location.cellSize) {
                     isTargeting = false;
                     eTarget = null;
                 } else {
@@ -2906,7 +2576,7 @@ abstract class Weapon { // can only be binded to a turret, define the weapon's b
     }
 
     void update(float deltaTime) {
-        if (Gamma.power < 0 && parent.parent instanceof Building) {
+        if (GameManager.getInstance().getPower() < 0 && parent.parent instanceof Building) {
             deltaTime = deltaTime / 2;
         }
 
@@ -3208,14 +2878,11 @@ abstract class Projectile extends Instance {
         }
     }
     void explode(double radius) {
-        // Create a persistent instance to hold the explosion animation
         Empty explosionHolder = new Empty();
         explosionHolder.exactX = this.exactX;
         explosionHolder.exactY = this.exactY;
         Gamma.add(explosionHolder);
-        
-        // Attach animation to the holder, not to this projectile
-        Utilities.animLoad("explode", (int) exactX, (int) exactY, 2, 2, explosionHolder, false);
+        Utilities.animLoad("explode", (int) exactX, (int) exactY, 1, 1, explosionHolder, false);
         
         // Deal area damage to enemies within radius
         double explosionRadius = radius * Location.cellSize;
