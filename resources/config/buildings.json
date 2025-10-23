@@ -1,0 +1,165 @@
+[
+  {
+    "name": "Headquarter",
+    "buildingType": "productive",
+    "cost": 1000000,
+    "buildTime": 999999,
+    "buildRange": 6,
+    "width": 4,
+    "height": 4,
+    "health": 2000,
+    "power": 25,
+    "description": "Don't let me down",
+    "imageName": "headquarter",
+    "buildLimit": 1,
+    "prerequisites": ["Peasant's tax money"]
+  },
+  {
+    "name": "PowerPlant",
+    "buildingType": "productive",
+    "cost": 100,
+    "buildTime": 8,
+    "buildRange": 5,
+    "width": 2,
+    "height": 2,
+    "health": 150,
+    "power": 50,
+    "description": "Generates power for your base.",
+    "imageName": "powerplant",
+    "prerequisites": ["Headquarter"]
+  },
+  {
+    "name": "OilRig",
+    "buildingType": "productive",
+    "cost": 500,
+    "buildTime": 20,
+    "buildRange": 3,
+    "width": 3,
+    "height": 2,
+    "health": 250,
+    "power": -40,
+    "description": "Don't let a certain country find out. Generates kromers.",
+    "imageName": "powerplant",
+    "prerequisites": ["PowerPlant"]
+  },
+  {
+    "name": "RadarDish",
+    "buildingType": "productive",
+    "cost": 800,
+    "buildTime": 25,
+    "buildRange": 4,
+    "width": 2,
+    "height": 2,
+    "health": 300,
+    "power": -25,
+    "description": "Provide a range boost to your buildings.",
+    "imageName": "powerplant",
+    "buildLimit": 1,
+    "prerequisites": ["PowerPlant", "OilRig"]
+  },
+  {
+    "name": "HeavyOrdnanceCenter",
+    "buildingType": "productive",
+    "cost": 800,
+    "buildTime": 30,
+    "buildRange": 5,
+    "width": 3,
+    "height": 3,
+    "health": 500,
+    "power": -50,
+    "description": "Technological advancement, armed with an artillery.",
+    "imageName": "powerplant",
+    "prerequisites": ["PowerPlant", "OilRig"],
+    "turrets": [
+      {
+        "offsetX": -27,
+        "offsetY": -27,
+        "rotationSpeed": 80,
+        "range": 14,
+        "weapons": [
+          {
+            "name": "Artillery",
+            "damage": 75,
+            "rof": 5,
+            "projectileSpeed": 6,
+            "offsetX": 25,
+            "offsetY": 0,
+            "projectileType": "shell",
+            "pierce": 0,
+            "spread": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "AutoCannon",
+    "buildingType": "offensive",
+    "cost": 75,
+    "buildTime": 7,
+    "buildRange": 0,
+    "width": 1,
+    "height": 1,
+    "health": 100,
+    "power": -10,
+    "description": "Basic automated turret.",
+    "imageName": "powerplant",
+    "prerequisites": ["PowerPlant"],
+    "turrets": [
+      {
+        "offsetX": 0,
+        "offsetY": 0,
+        "rotationSpeed": 120,
+        "range": 4,
+        "weapons": [
+          {
+            "name": "AutoCannonW",
+            "damage": 5,
+            "rof": 0.3,
+            "projectileSpeed": 10,
+            "offsetX": 15,
+            "offsetY": 0,
+            "projectileType": "bullet",
+            "pierce": 0,
+            "spread": 5
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Artillery",
+    "buildingType": "offensive",
+    "cost": 500,
+    "buildTime": 23,
+    "buildRange": 0,
+    "width": 2,
+    "height": 2,
+    "health": 300,
+    "power": -25,
+    "description": "Blow stuff up from a distance. Not too accurate on corners, totally intended.",
+    "imageName": "powerplant",
+    "prerequisites": ["PowerPlant", "HeavyOrdnanceCenter"],
+    "turrets": [
+      {
+        "offsetX": 0,
+        "offsetY": 0,
+        "rotationSpeed": 80,
+        "range": 14,
+        "weapons": [
+          {
+            "name": "ArtilleryW",
+            "damage": 75,
+            "rof": 5,
+            "projectileSpeed": 6,
+            "offsetX": 25,
+            "offsetY": 0,
+            "projectileType": "shell",
+            "pierce": 0,
+            "spread": 0
+          }
+        ]
+      }
+    ]
+  }
+]

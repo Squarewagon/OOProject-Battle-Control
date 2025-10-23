@@ -81,14 +81,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
     ArrayList<Point> unbuildable = new ArrayList<>();
 
     public static int wave = 0;
-
-    // Cached graphics objects for performance
-    private static final Color BUILDABLE_COLOR = new Color(0, 255, 0, 100);
-    private static final Color UNBUILDABLE_COLOR = new Color(255, 0, 0, 100);
-    private static final Color PREVIEW_COLOR = new Color(255, 255, 255, 150);
-    private static final BasicStroke PREVIEW_STROKE_THICK = new BasicStroke(2);
-    private static final BasicStroke PREVIEW_STROKE_THIN = new BasicStroke(1);
-
+    
     // Initialize building list from ConfigManager
     void init() {
         ConfigManager config = gameManager.getConfigManager();
@@ -134,50 +127,17 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
     }
 
     class Icon {
-        Class<?> clazz;
-        int cost;
-        double buildTime;
-        double buildRange;
-        boolean buildable = false; // will be true when all prerequisites are met
-        String desc;
-        ArrayList<String> prerequisites = new ArrayList<>();
-        int buildLimit = -1; // -1 means no limit
+        // Reference to config data
+        BuildingStats stats;
 
-        // Construction state
+        // Construction state only - all other data comes from BuildingStats
         boolean building = false;
         double constructionTimer = 0.0;
         boolean ready = false;
 
-        // NEW: Constructor that takes BuildingStats from config
+        // Constructor takes BuildingStats from config
         Icon(BuildingStats stats) {
-            this.clazz = stats.buildingClass;
-            this.cost = stats.cost;
-            this.buildTime = stats.buildTime;
-            this.buildRange = stats.buildRange;
-            this.buildLimit = stats.buildLimit;
-            this.prerequisites.addAll(stats.prerequisites);
-            this.desc = stats.description;
-        }
-
-        Icon(Class<?> clazz, int cost, double buildTime, double buildRange, String prerequisites, String desc, int buildLimit) {
-            this.clazz = clazz;
-            this.cost = cost;
-            this.buildTime = buildTime;
-            this.buildRange = buildRange;
-            this.buildLimit = buildLimit;
-            this.prerequisites.addAll(List.of(prerequisites.toLowerCase().split(" ")));
-            this.desc = desc;
-            Class<?> superClass = clazz.getSuperclass();
-            if (superClass == Productive.class) {
-                productive.add(this);
-            } else if (superClass == Offensive.class) {
-                offensive.add(this);
-            }
-            iconByClass.putIfAbsent(clazz, this);
-        }
-
-        Icon(Class<?> clazz, int cost, double buildTime, double buildRange, String prerequisites, String desc) {
-            this(clazz, cost, buildTime, buildRange, prerequisites, desc, -1);
+            this.stats = stats;
         }
 
         void construct() {
@@ -186,10 +146,9 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
             ready = false;
 
             // Set the appropriate category as under construction
-            Class<?> superClass = clazz.getSuperclass();
-            if (superClass == Productive.class) {
+            if ("productive".equals(stats.buildingType)) {
                 proOnCons = true;
-            } else if (superClass == Offensive.class) {
+            } else if ("offensive".equals(stats.buildingType)) {
                 offOnCons = true;
             }
         }
@@ -199,7 +158,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
                 deltaTime = deltaTime / 2;
             if (building && !ready) {
                 constructionTimer += deltaTime;
-                if (constructionTimer >= buildTime) {
+                if (constructionTimer >= stats.buildTime) {
                     ready = true;
                     building = false;
                 }
@@ -350,14 +309,14 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
                         // Get the buildRange from the Icon associated with this building's class
                         double buildRange = 1.0;
                         for (Icon ic : productive) {
-                            if (ic.clazz == building.getClass()) {
-                                buildRange = ic.buildRange;
+                            if (ic.stats.buildingClass == building.getClass()) {
+                                buildRange = ic.stats.buildRange;
                                 break;
                             }
                         }
                         for (Icon ic : offensive) {
-                            if (ic.clazz == building.getClass()) {
-                                buildRange = ic.buildRange;
+                            if (ic.stats.buildingClass == building.getClass()) {
+                                buildRange = ic.stats.buildRange;
                                 break;
                             }
                         }
@@ -464,10 +423,9 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
                         previewHeight = 0;
                         buildable.clear();
                         unbuildable.clear();
-                        Class<?> superClass = iconToBuild.clazz.getSuperclass();
-                        if (superClass == Productive.class) {
+                        if ("productive".equals(iconToBuild.stats.buildingType)) {
                             proOnCons = false;
-                        } else if (superClass == Offensive.class) {
+                        } else if ("offensive".equals(iconToBuild.stats.buildingType)) {
                             offOnCons = false;
                         }
                     } else {
@@ -539,252 +497,8 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         });
     }
 
-    private void drawGameArea(Graphics2D g2d) {
-        g2d.setColor(Location.bg);
-        g2d.fillRect(0, 0, GAME_WIDTH, HEIGHT);
-        g2d.setColor(Location.pc);
-        for (Point p : Location.path) {
-            g2d.fillRect(p.x * Location.cellSize, p.y * Location.cellSize, Location.cellSize, Location.cellSize);
-        }
-        g2d.setColor(new Color(255, 255, 255, 30));
-        for (int x = 0; x < GAME_WIDTH; x += Location.cellSize) {
-            g2d.drawLine(x, 0, x, HEIGHT);
-        }
-        for (int y = 0; y < HEIGHT; y += Location.cellSize) {
-            g2d.drawLine(0, y, GAME_WIDTH, y);
-        }
-
-        // draw all instances in order of zIndex
-        List<Elements> renderQueue = new ArrayList<>();
-        for (Instance instance : Instances) {
-            renderQueue.add(new Elements(instance, instance.zIndex));
-            for (Turret turret : instance.turrets) {
-                renderQueue.add(new Elements(turret, turret.zIndex));
-            }
-            for (Prop prop : instance.props) {
-                renderQueue.add(new Elements(prop, prop.zIndex));
-            }
-            for (Utilities.Animation anim : instance.anims) {
-                renderQueue.add(new Elements(anim::render, 50)); // High z-index for animations
-            }
-        }
-        renderQueue.sort(Comparator.comparingInt(obj -> obj.zIndex));
-        for (Elements obj : renderQueue) {
-            obj.r.render(g2d);
-        }
-
-        // When hovering over an instance, draw its range and health bar
-        Instance hoveredInstance = null;
-        for (Instance instance : Instances) {
-            if (!instance.isAlive())
-                continue;
-            // Use hitboxes for accurate hover detection
-            for (Hitbox hitbox : instance.hitboxes) {
-                Polygon poly = new Polygon();
-                for (Point corner : hitbox.corners) {
-                    poly.addPoint(corner.x, corner.y);
-                }
-                if (poly.contains(mx, my) && currentState != GameState.PAUSED) {
-                    hoveredInstance = instance;
-                    break;
-                }
-            }
-            if (hoveredInstance != null)
-                break;
-        }
-
-        if (hoveredInstance != null) {
-            // Draw range for turrets (if any) considering global range multiplier
-            for (Turret turret : hoveredInstance.turrets) {
-                int centerX = (int) turret.exactX;
-                int centerY = (int) turret.exactY;
-                int rangeRadius = (int) (turret.range * hoveredInstance.rangeMult * Location.cellSize);
-                g2d.setColor(PREVIEW_COLOR);
-                g2d.setStroke(PREVIEW_STROKE_THICK);
-                g2d.drawOval(centerX - rangeRadius, centerY - rangeRadius, rangeRadius * 2, rangeRadius * 2);
-            }
-
-            // Draw health bar above the instance, centered based on hitbox size
-            int barHeight = 5;
-            int barWidth;
-            int drawX, drawY;
-
-            // Determine hitbox size for health bar width
-            double hitboxW = 1, hitboxH = 1;
-            if (!hoveredInstance.hitboxes.isEmpty()) {
-                Hitbox hb = hoveredInstance.hitboxes.get(0);
-                hitboxW = hb.width;
-                hitboxH = hb.height;
-            }
-            int maxDim = (int) Math.round(Math.max(hitboxW, hitboxH) * Location.cellSize);
-            barWidth = Math.max(60, maxDim * 2);
-
-            if (hoveredInstance instanceof Building) {
-                // Center above the building using width
-                Building b = (Building) hoveredInstance;
-                int px = b.x * Location.cellSize;
-                int py = b.y * Location.cellSize;
-                int w = b.width * Location.cellSize;
-                drawX = px + (w - barWidth) / 2;
-                drawY = py - 18;
-            } else {
-                // Center above instance using exactX
-                drawX = (int) hoveredInstance.exactX - barWidth / 2;
-                drawY = (int) hoveredInstance.exactY - maxDim / 2 - 18;
-            }
-
-            double healthPercent = Math.max(0,
-                    Math.min(1.0, hoveredInstance.health / (double) hoveredInstance.maxHealth));
-            g2d.setColor(Color.DARK_GRAY);
-            g2d.fillRect(drawX, drawY, barWidth, barHeight);
-            g2d.setColor(Color.GREEN);
-            g2d.fillRect(drawX, drawY, (int) (barWidth * healthPercent), barHeight);
-            g2d.setColor(Color.BLACK);
-            g2d.setStroke(PREVIEW_STROKE_THIN);
-            g2d.drawRect(drawX, drawY, barWidth, barHeight);
-
-            // Draw health text
-            String healthText = hoveredInstance.health + " / " + hoveredInstance.maxHealth;
-            g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 12f));
-            FontMetrics fm = g2d.getFontMetrics();
-            int textWidth = fm.stringWidth(healthText);
-            g2d.setColor(Color.WHITE);
-            g2d.drawString(healthText, drawX + (barWidth - textWidth) / 2, drawY + barHeight + fm.getAscent());
-        }
-
-        // hitbox draw last
-        if (showHitboxes) {
-            drawHitbox(g2d);
-        }
-    }
-
     // this will actually also draw in the game area, but this will draw elements
     // like "interface" rather than game objects
-    private void drawUIPanel(Graphics2D g2d) {
-        // ui setup
-        g2d.drawImage(Utilities.load("ui", 1.0, 1.0), GAME_WIDTH, 0, null);
-        g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 16f)); // You can replace "Arial" with your font name
-
-        // Draw Power centered at (uiMid - 120, 90)
-        String powerStr = "Power: " + power;
-        FontMetrics fm = g2d.getFontMetrics();
-        int powerWidth = fm.stringWidth(powerStr);
-        int powerX = uiMid - 90 - powerWidth / 2;
-        int powerY = 85 + fm.getAscent() / 2 - fm.getDescent() / 2;
-        if (power < 0)
-            g2d.setColor(Color.RED);
-        else if (power == 0)
-            g2d.setColor(Color.YELLOW);
-        else
-            g2d.setColor(Color.GREEN);
-        g2d.drawString(powerStr, powerX, powerY);
-
-        // Draw Kromer centered at (uiMid + 120, 90)
-        String kromerStr = "Kromer: " + kromer;
-        int kromerWidth = fm.stringWidth(kromerStr);
-        int kromerX = uiMid + 90 - kromerWidth / 2;
-        int kromerY = 85 + fm.getAscent() / 2 - fm.getDescent() / 2;
-        g2d.setColor(Color.YELLOW);
-        g2d.drawString(kromerStr, kromerX, kromerY);
-        g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 20f));
-        fm = g2d.getFontMetrics();
-
-        // Draw tab buttons
-        if (tabSelected.equals("productive")) {
-            g2d.drawImage(Utilities.load("productiveSelect", 1.0, 1.0), 1591, 168, null);
-            g2d.setColor(Color.BLACK);
-            g2d.drawString("Productive", 1591 + (uiMid - 1591) / 2 - fm.stringWidth("Productive") / 2, 190);
-            g2d.setColor(Color.WHITE);
-            g2d.drawString("Offensive", uiMid + (uiMid - 1591) / 2 - fm.stringWidth("Offensive") / 2, 190);
-        } else {
-            g2d.drawImage(Utilities.load("offensiveSelect", 1.0, 1.0), 1591, 168, null);
-            g2d.setColor(Color.WHITE);
-            g2d.drawString("Productive", 1591 + (uiMid - 1591) / 2 - fm.stringWidth("Productive") / 2, 190);
-            g2d.setColor(Color.BLACK);
-            g2d.drawString("Offensive", uiMid + (uiMid - 1591) / 2 - fm.stringWidth("Offensive") / 2, 190);
-        }
-        // Save current font and metrics for button
-        Font buttonFont = Utilities.loadFont("Romanov", Font.BOLD, 20f);
-        FontMetrics buttonFm = g2d.getFontMetrics(buttonFont);
-
-        buildingList(g2d);
-
-        if (!err.isEmpty()) {
-            // Track error message timing
-            if (errFadeStartTime == 0) {
-                errFadeStartTime = System.currentTimeMillis();
-            }
-            long elapsed = System.currentTimeMillis() - errFadeStartTime;
-            float alpha = 1.0f - Math.min(elapsed / 1500f, 1.0f); // Fade out over 1.5 seconds
-
-            if (alpha > 0.01f) {
-                g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 25f));
-                fm = g2d.getFontMetrics();
-                g2d.setColor(new Color(255, 0, 0, (int) (255 * alpha)));
-                g2d.drawString(err, uiMid - fm.stringWidth(err) / 2, 140);
-
-                // Optional: draw a faded background
-                AlphaComposite ac = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.2f * alpha);
-                Composite orig = g2d.getComposite();
-                g2d.setComposite(ac);
-                g2d.setColor(Color.BLACK);
-                g2d.setComposite(orig);
-            } else {
-                err = "";
-                errFadeStartTime = 0;
-            }
-        } else {
-            errFadeStartTime = 0;
-        }
-
-        // Always use the same font and metrics for the wave button
-        g2d.setFont(buttonFont);
-        fm = buttonFm;
-        // draw wave button and info
-        g2d.setColor(Color.WHITE);
-        String buttonText;
-        if (gameManager.getWave() == 0) {
-            buttonText = "Start Wave 1";
-        } else if (WaveManager.waveActive) {
-            buttonText = fastForward ? "Fast Forward ON" : "Fast Forward OFF";
-        } else if (WaveManager.waveCompleted) {
-            buttonText = fastForward ? "Fast Forward ON" : "Fast Forward OFF";
-        } else {
-            buttonText = fastForward ? "Fast Forward ON" : "Fast Forward OFF";
-        }
-        g2d.drawString(buttonText, uiMid - fm.stringWidth(buttonText) / 2, 955);
-        g2d.setFont(Utilities.loadFont("Romanov", Font.PLAIN, 30f));
-        fm = g2d.getFontMetrics();
-
-        String waveDisplay;
-        if (gameManager.getWave() == 0) {
-            waveDisplay = "Intermission";
-        } else if (WaveManager.waveCompleted) {
-            waveDisplay = "Wave " + WaveManager.conqueredWave + " Completed!";
-        } else {
-            waveDisplay = "Wave: " + gameManager.getWave();
-        }
-        g2d.drawString(waveDisplay, uiMid - fm.stringWidth(waveDisplay) / 2, 1010);
-
-        if (mx >= uiMid - 130 && mx <= uiMid + 130 && my >= 930 && my <= 967) {
-            // mouse over start wave button, or other function after starting the wave
-            if (m1 && gameManager.getWave() == 0 && !WaveManager.waveActive) {
-                // Start wave 1 from intermission
-                gameManager.setWave(1);
-                wave = gameManager.getWave();
-                WaveManager.startWave(wave);
-            } else if (m1 && gameManager.getWave() > 0) {
-                // Toggle fast forward for waves after wave 1
-                fastForward = !fastForward;
-            }
-            m1 = false;
-        }
-
-        g2d.setFont(Utilities.loadFont("Romanov", Font.PLAIN, 15f));
-        g2d.setStroke(new BasicStroke(1)); // information about the cursor location
-        g2d.drawString(mx + ", " + my, mx + 20, my + 50);
-    }
-
     // small error message function
     public void error(String message) {
         err = message;
@@ -803,7 +517,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         
         Icon icon = iconByClass.get(building.getClass());
         if (icon != null) {
-            int refund = (int) (icon.cost * 0.5f * (building.health / (float) building.maxHealth));
+            int refund = (int) (icon.stats.cost * 0.5f * (building.health / (float) building.maxHealth));
             gameManager.addKromer(refund);
             building.destroy();
             return true;
@@ -811,339 +525,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         return false;
     }
 
-    private void buildingList(Graphics2D g2d) {
-        List<Icon> iconsToDraw = tabSelected.equals("productive") ? productive : offensive;
-        int startX = uiMid - 100;
-        int startY = 220;
-        int spaceX = 100;
-        int iconsPerRow = 3;
-
-        // Track hovered icon to draw tooltip last
-        Icon hoveredIcon = null;
-
-        int visibleIndex = 0;
-        for (Icon icon : iconsToDraw) {
-            if (!canBuild(icon.clazz.getSimpleName())) {
-                continue; // skip icons that cannot be built, don't leave space
-            }
-            int buildingCount = 0;
-            for (Instance inst : Instances) {
-                if (inst.getClass() == icon.clazz && inst.isAlive()) {
-                    buildingCount++;
-                }
-            }
-            int row = visibleIndex / iconsPerRow;
-            int col = visibleIndex % iconsPerRow;
-            int x = startX + col * spaceX;
-            int y = startY + row * spaceX;
-            visibleIndex++;
-
-            BufferedImage img = Utilities.load(icon.clazz.getSimpleName().toLowerCase() + "_icon", 1.0, 1.0);
-            // Safe fallback sizes when image missing
-            int imgW = 64;
-            int imgH = 64;
-            if (img != null) {
-                imgW = img.getWidth();
-                imgH = img.getHeight();
-            }
-            if (img != null) {
-                // Determine if this icon should be grayed out
-                Class<?> superClass = icon.clazz.getSuperclass();
-                boolean shouldGrayOut = false;
-
-                // Check if build limit reached for this building type
-                if (icon.buildLimit >= 0) {
-                    if (buildingCount >= icon.buildLimit) {
-                        shouldGrayOut = true;
-                    }
-                }
-
-                // Also gray out if construction in same category is ongoing
-                if (!shouldGrayOut) {
-                    if (superClass == Productive.class && proOnCons && !icon.building && !icon.ready) {
-                        shouldGrayOut = true;
-                    } else if (superClass == Offensive.class && offOnCons && !icon.building && !icon.ready) {
-                        shouldGrayOut = true;
-                    }
-                }
-
-                // Draw the icon with appropriate alpha
-                if (shouldGrayOut) {
-                    Composite originalComposite = g2d.getComposite();
-                    g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.3f));
-                    g2d.drawImage(img, x - img.getWidth() / 2, y, img.getWidth(), img.getHeight(), null);
-                    g2d.setComposite(originalComposite);
-                } else {
-                    g2d.drawImage(img, x - img.getWidth() / 2, y, img.getWidth(), img.getHeight(), null);
-                }
-
-                // Draw construction timer or "READY" text
-                if (icon.building) {
-                    // Draw construction timer
-                    double timeRemaining = icon.buildTime - icon.constructionTimer;
-                    String timerText = String.format("%.1f", Math.max(0, timeRemaining));
-
-                    g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 24f));
-                    FontMetrics fm = g2d.getFontMetrics();
-                    int textWidth = fm.stringWidth(timerText);
-                    int textHeight = fm.getAscent();
-
-                    // Draw semi-transparent background
-                    g2d.setColor(new Color(0, 0, 0, 150));
-                    g2d.fillOval(x - 30, y + img.getHeight() / 2 - 15, 60, 30);
-
-                    // Draw timer text
-                    g2d.setColor(Color.WHITE);
-                    g2d.drawString(timerText, x - textWidth / 2, y + img.getHeight() / 2 + textHeight / 2 - 3);
-
-                } else if (icon.ready) {
-                    // Draw "READY" text
-                    String readyText = "READY";
-
-                    g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 16f));
-                    FontMetrics fm = g2d.getFontMetrics();
-                    int textWidth = fm.stringWidth(readyText);
-                    int textHeight = fm.getAscent();
-
-                    // Draw semi-transparent background
-                    g2d.setColor(new Color(0, 150, 0, 180));
-                    g2d.fillOval(x - 35, y + img.getHeight() / 2 - 12, 70, 24);
-
-                    // Draw ready text
-                    g2d.setColor(Color.WHITE);
-                    g2d.drawString(readyText, x - textWidth / 2, y + img.getHeight() / 2 + textHeight / 2 - 3);
-                }
-            }
-
-            boolean mouseOver = mx >= x - imgW / 2 && mx <= x + imgW / 2 && my >= y
-                    && my <= y + imgH; // use height for vertical bound
-            
-            // Store hovered icon to draw tooltip after all icons are drawn
-            if (mouseOver && currentState != GameState.PAUSED) {
-                hoveredIcon = icon;
-            }
-            
-            if (mouseOver && m1) {
-                ;
-                // Check if we can start construction
-                Class<?> superClass = icon.clazz.getSuperclass();
-                boolean canConstruct = false;
-
-                if (superClass == Productive.class && !proOnCons) {
-                    canConstruct = true;
-                } else if (superClass == Offensive.class && !offOnCons) {
-                    canConstruct = true;
-                }
-                if (kromer < icon.cost && !icon.ready) {
-                    canConstruct = false;
-                    String[] messages = {
-                            "poor",
-                    };
-                    int idx = (int) (Math.random() * messages.length);
-                    error(messages[idx]);
-                }
-                if (!icon.ready && icon.building || buildingCount >= icon.buildLimit && icon.buildLimit >= 0) {
-                    canConstruct = false;
-                    String[] messages = {
-                            "chill out",
-                    };
-                    int idx = (int) (Math.random() * messages.length);
-                    error(messages[idx]);
-                }
-
-                if (canConstruct && !icon.building && !icon.ready) {
-                    sellMode = false;
-                    repairMode = false;
-                    buildMode = false;
-                    icon.construct();
-                    gameManager.addKromer(-icon.cost);
-                    kromer = gameManager.getKromer();
-                } else if (icon.ready) {
-                    sellMode = false;
-                    repairMode = false;
-                    buildMode = true;
-                    iconToBuild = icon;
-                    buildingToBuild = icon.clazz;
-
-                    // Extract turret info and building dimensions from dummy instance
-                    getConstructor = true;
-                    try {
-                        Instance dummy = (Instance) buildingToBuild.getDeclaredConstructor(int.class, int.class)
-                                .newInstance(0, 0);
-                        turretOffsets.clear();
-                        turretRanges.clear();
-                        for (Turret turret : dummy.turrets) {
-                            turretOffsets.add(new Point(turret.offsetX, turret.offsetY));
-                            turretRanges.add(turret.range);
-                        }
-
-                        // Cache building dimensions
-                        previewWidth = buildingToBuild.getDeclaredField("width").getInt(null);
-                        previewHeight = buildingToBuild.getDeclaredField("height").getInt(null);
-                    } catch (Exception e) {
-                        turretOffsets.clear();
-                        turretRanges.clear();
-                        previewWidth = 1;
-                        previewHeight = 1;
-                    }
-                    getConstructor = false;
-
-                    refresh();
-                }
-                m1 = false;
-            } else if (mouseOver && m2) { // refund when right clicking constructing,ed icon
-                if (icon.building || icon.ready) {
-                    icon.building = false;
-                    icon.ready = false;
-                    icon.constructionTimer = 0.0;
-                    Class<?> superClass = icon.clazz.getSuperclass();
-                    if (superClass == Productive.class) {
-                        proOnCons = false;
-                    } else if (superClass == Offensive.class) {
-                        offOnCons = false;
-                    }
-                    gameManager.addKromer(icon.cost); // refund
-                    kromer = gameManager.getKromer();
-                }
-                m2 = false;
-            }
-        }
-
-        // Draw tooltip last so it appears on top of all icons
-        if (hoveredIcon != null) {
-            g2d.setFont(Utilities.loadFont("Romanov", Font.PLAIN, 20f));
-            FontMetrics fm = g2d.getFontMetrics();
-            String rawName = hoveredIcon.clazz.getSimpleName();
-            StringBuilder nameBuilder = new StringBuilder();
-            for (int i = 0; i < rawName.length(); i++) {
-                char c = rawName.charAt(i);
-                if (i > 0 && Character.isUpperCase(c) && !Character.isUpperCase(rawName.charAt(i - 1))) {
-                    nameBuilder.append(' ');
-                }
-                nameBuilder.append(c);
-            }
-            String name = nameBuilder.toString();
-            String cost = "Cost: " + hoveredIcon.cost + " Kromer";
-            String time = "Build Time: " + hoveredIcon.buildTime + "s";
-            String desc = hoveredIcon.desc;
-
-            int tooltipWidth = 220;
-            int padding = 8;
-            int lineHeight = fm.getHeight();
-
-            // Word wrap description, ensuring no line exceeds tooltipWidth - 2*padding
-            java.util.List<String> descLines = new ArrayList<>();
-            String[] words = desc.split(" ");
-            StringBuilder line = new StringBuilder();
-            for (String word : words) {
-                String testLine = line.length() == 0 ? word : line + " " + word;
-                if (fm.stringWidth(testLine) > tooltipWidth - 2 * padding) {
-                    if (line.length() > 0)
-                        descLines.add(line.toString());
-                    line = new StringBuilder(word);
-                } else {
-                    if (line.length() > 0)
-                        line.append(" ");
-                    line.append(word);
-                }
-            }
-            if (line.length() > 0)
-                descLines.add(line.toString());
-
-            // Ensure each line does not exceed the tooltip width (hard break if needed)
-            java.util.List<String> finalDescLines = new ArrayList<>();
-            for (String l : descLines) {
-                if (fm.stringWidth(l) <= tooltipWidth - 2 * padding) {
-                    finalDescLines.add(l);
-                } else {
-                    // Hard break long lines
-                    StringBuilder sb = new StringBuilder();
-                    for (char c : l.toCharArray()) {
-                        sb.append(c);
-                        if (fm.stringWidth(sb.toString()) > tooltipWidth - 2 * padding) {
-                            // Remove last char, add line, start new
-                            sb.deleteCharAt(sb.length() - 1);
-                            finalDescLines.add(sb.toString());
-                            sb = new StringBuilder().append(c);
-                        }
-                    }
-                    if (sb.length() > 0)
-                        finalDescLines.add(sb.toString());
-                }
-            }
-
-            int tooltipHeight = (3 + finalDescLines.size()) * lineHeight + 2 * padding;
-
-            // Prefer to place tooltip to the left of the cursor; if that would overflow,
-            // place to the right
-            int tooltipX = mx - tooltipWidth - 15;
-            if (tooltipX < 0) {
-                tooltipX = mx + 15;
-            }
-            int tooltipY = my - tooltipHeight / 2;
-
-            // Ensure tooltip stays within UI bounds
-            if (tooltipX < 0)
-                tooltipX = 0;
-            if (tooltipY < 0)
-                tooltipY = 0;
-            if (tooltipX + tooltipWidth > 1920)
-                tooltipX = 1920 - tooltipWidth;
-            if (tooltipY + tooltipHeight > 1080)
-                tooltipY = 1080 - tooltipHeight;
-
-            // Draw background and border
-            g2d.setColor(new Color(0, 0, 0, 220));
-            g2d.fillRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
-            g2d.setColor(Color.WHITE);
-            g2d.drawRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
-
-            int textY = tooltipY + padding + fm.getAscent();
-            g2d.drawString(name, tooltipX + padding, textY);
-            textY += lineHeight;
-            g2d.drawString(cost, tooltipX + padding, textY);
-            textY += lineHeight;
-            g2d.drawString(time, tooltipX + padding, textY);
-            textY += lineHeight;
-
-            for (String descLine : finalDescLines) {
-                g2d.drawString(descLine, tooltipX + padding, textY);
-                textY += lineHeight;
-            }
-        }
-    }
-
-    private boolean canBuild(String buildingName) {
-        Icon icon = null;
-        for (Icon ic : productive) {
-            if (ic.clazz.getSimpleName().equalsIgnoreCase(buildingName)) {
-                icon = ic;
-                break;
-            }
-        }
-        for (Icon ic : offensive) {
-            if (ic.clazz.getSimpleName().equalsIgnoreCase(buildingName)) {
-                icon = ic;
-                break;
-            }
-        }
-        if (icon == null)
-            return false;
-        for (String req : icon.prerequisites) {
-            boolean found = false;
-            for (Instance instance : Instances) {
-                if (instance instanceof Building && instance.getClass().getSimpleName().equalsIgnoreCase(req)) {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                return false;
-            }
-        }
-        return true;
-    }
-
+   
     // this method will be used globally to update buildable cells in build mode
     public void refresh() {
         buildable.clear();
@@ -1165,14 +547,14 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
             // Get the buildRange from the Icon associated with this building's class
             double buildRange = 1.0;
             for (Icon icon : productive) {
-                if (icon.clazz == building.getClass()) {
-                    buildRange = icon.buildRange;
+                if (icon.stats.buildingClass == building.getClass()) {
+                    buildRange = icon.stats.buildRange;
                     break;
                 }
             }
             for (Icon icon : offensive) {
-                if (icon.clazz == building.getClass()) {
-                    buildRange = icon.buildRange;
+                if (icon.stats.buildingClass == building.getClass()) {
+                    buildRange = icon.stats.buildRange;
                     break;
                 }
             }
@@ -1197,37 +579,6 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
                         }
                     }
                 }
-            }
-        }
-    }
-
-    private void drawHitbox(Graphics2D g2d) {
-        for (Instance instance : Instances) {
-            if (!instance.isAlive())
-                continue;
-
-            // Set color based on instance type
-            if (instance instanceof Building) {
-                g2d.setColor(Color.GREEN);
-            } else if (instance instanceof Enemy) {
-                g2d.setColor(Color.RED);
-            } else if (instance instanceof Projectile) {
-                g2d.setColor(Color.PINK);
-            } else {
-                g2d.setColor(Color.YELLOW); // Default for other types
-            }
-
-            g2d.setStroke(new BasicStroke(2));
-
-            // Draw all hitboxes for this instance
-            for (Hitbox hitbox : instance.hitboxes) {
-                int[] xPoints = new int[4];
-                int[] yPoints = new int[4];
-                for (int i = 0; i < 4; i++) {
-                    xPoints[i] = hitbox.corners.get(i).x;
-                    yPoints[i] = hitbox.corners.get(i).y;
-                }
-                g2d.drawPolygon(xPoints, yPoints, 4);
             }
         }
     }
@@ -1446,7 +797,6 @@ abstract class Instance implements Elements.Renderable {
     double facing = 0; // angle in radians
     boolean alive = true;
     ArrayList<Turret> turrets = new ArrayList<>();
-    ArrayList<Prop> props = new ArrayList<>();
     ArrayList<Weapon> weapons = new ArrayList<>();
     ArrayList<Utilities.Animation> anims = new ArrayList<>();
     int zIndex = 0; // Default Z-index
@@ -1479,10 +829,6 @@ abstract class Instance implements Elements.Renderable {
 
     void add(Turret turret) {
         turrets.add(turret);
-    }
-
-    void add(Prop prop) {
-        props.add(prop);
     }
 
     void add(Weapon weapon) {
@@ -1521,6 +867,21 @@ abstract class Instance implements Elements.Renderable {
 
     // Destroy this instance
     abstract public void destroy();
+
+    // Helper method to create weapons from config stats
+    protected Weapon createWeaponFromStats(Turret turret, WeaponStats stats) {
+        // Create a weapon with all stats from config
+        Weapon weapon = new Weapon(turret, stats.offsetX, stats.offsetY);
+        weapon.damage = stats.damage;
+        weapon.rof = stats.rof;
+        weapon.pSpeed = stats.projectileSpeed;
+        weapon.spread = stats.spread;
+        weapon.pierce = stats.pierce;
+        weapon.burst = stats.burst;
+        weapon.burstDelay = stats.burstDelay;
+        weapon.projectileType = stats.projectileType != null ? stats.projectileType : "bullet";
+        return weapon;
+    }
 }
 
 class Empty extends Instance {
@@ -1567,6 +928,14 @@ abstract class Building extends Instance {
         super(x, y, calHealth);
         this.width = width;
         this.height = height;
+        setupBuildingLayout(width, height, power);
+        loadFromConfig();
+    }
+
+    /**
+     * Set up building layout: hitbox, image offsets, occupied cells
+     */
+    private void setupBuildingLayout(int width, int height, int power) {
         hitbox((width * Location.cellSize - Location.cellSize) / 2,
                 (height * Location.cellSize - Location.cellSize) / 2, width, height);  
         this.power = power;
@@ -1660,10 +1029,43 @@ abstract class Building extends Instance {
         }
 
         turrets.clear();
-        props.clear();
         GameManager.getInstance().addPower(-this.power);
         Gamma.power = GameManager.getInstance().getPower();
         alive = false;
+
+        // Cancel construction of any buildings that depend on this one as a prerequisite
+        String destroyedBuildingName = this.getClass().getSimpleName();
+        Gamma gamma = Gamma.getInstance();
+        
+        // Check productive buildings
+        for (Gamma.Icon icon : Gamma.productive) {
+            if (icon.stats.prerequisites.contains(destroyedBuildingName) && (icon.building || icon.ready)) {
+                // Refund full cost (building under construction hasn't taken damage)
+                int refund = icon.stats.cost;
+                GameManager.getInstance().addKromer(refund);
+                
+                // Reset construction state
+                icon.building = false;
+                icon.ready = false;
+                icon.constructionTimer = 0.0;
+                gamma.proOnCons = false;
+            }
+        }
+        
+        // Check offensive buildings
+        for (Gamma.Icon icon : Gamma.offensive) {
+            if (icon.stats.prerequisites.contains(destroyedBuildingName) && (icon.building || icon.ready)) {
+                // Refund full cost (building under construction hasn't taken damage)
+                int refund = icon.stats.cost;
+                GameManager.getInstance().addKromer(refund);
+                
+                // Reset construction state
+                icon.building = false;
+                icon.ready = false;
+                icon.constructionTimer = 0.0;
+                gamma.offOnCons = false;
+            }
+        }
 
         // Update build mode cells
         Gamma.getInstance().refresh();
@@ -1671,6 +1073,31 @@ abstract class Building extends Instance {
 
     public void onLowPower() {
 
+    }
+
+    /**
+     * Load turrets and weapons from config.
+     * Called automatically from Building constructor.
+     */
+    private void loadFromConfig() {
+        BuildingStats stats = GameManager.getInstance().getConfigManager().getAllBuildingStats().get(this.getClass().getSimpleName());
+        if (stats == null || stats.turrets == null) return;
+        
+        for (TurretStats turretStats : stats.turrets) {
+            Turret turret = new Turret(this, turretStats.offsetX, turretStats.offsetY, turretStats.rotationSpeed);
+            turret.range = turretStats.range;
+            add(turret);
+            
+            // Add weapons from config
+            if (turretStats.weapons != null) {
+                for (WeaponStats weaponStats : turretStats.weapons) {
+                    Weapon weapon = createWeaponFromStats(turret, weaponStats);
+                    if (weapon != null) {
+                        add(weapon);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1730,9 +1157,6 @@ class HeavyOrdnanceCenter extends Productive {
     public HeavyOrdnanceCenter(int x, int y) {
         super(x, y, 500, width, height, -50);
         zIndex = 0; // Buildings on bottom layer
-
-        add(new Turret(this, -27, -27, 80));
-        add(new ArtilleryW(turrets.get(0), 25, 0));
     }
 }
 
@@ -1752,10 +1176,6 @@ class AutoCannon extends Offensive {
     public AutoCannon(int x, int y) {
         super(x, y, 100, width, height, -10);
         zIndex = 0; // Buildings on bottom layer
-
-        add(new Turret(this, 0, 0, 120));
-        add(new Prop("bar", turrets.get(0), 15, 0, 1, 1));
-        add(new AutoCannonW(turrets.get(0), 15, 0));
     }
 }
 
@@ -1766,9 +1186,6 @@ class Artillery extends Offensive {
     public Artillery(int x, int y) {
         super(x, y, 300, width, height, -25);
         zIndex = 0; // Buildings on bottom layer
-
-        add(new Turret(this, 0, 0, 80));
-        add(new ArtilleryW(turrets.get(0), 25, 0));
     }
 }
 
@@ -1815,6 +1232,7 @@ abstract class Enemy extends Instance {
             facing = angle;
         }
         setWeight();
+        loadFromConfig();
     }
 
     @Override
@@ -1958,8 +1376,63 @@ abstract class Enemy extends Instance {
     }
 
     int getWeight(Building building) {
-        String key = building.getClass().getSimpleName().toLowerCase();
-        return weight.getOrDefault(key, 100);
+        String key = building.getClass().getSimpleName();
+        // Try exact match first
+        if (weight.containsKey(key)) {
+            return weight.get(key);
+        }
+        // Try lowercase match as fallback
+        Integer lowerCaseValue = weight.get(key.toLowerCase());
+        if (lowerCaseValue != null) {
+            return lowerCaseValue;
+        }
+        return 100; // default weight
+    }
+
+    /**
+     * Load turrets and weapons from config.
+     * Called automatically from Enemy constructor.
+     */
+    private void loadFromConfig() {
+        EnemyStats stats = GameManager.getInstance().getConfigManager().getAllEnemyStats().get(this.getClass().getSimpleName());
+        if (stats == null) return;
+        
+        // Load movement stats from config
+        if (stats.maxSpeed > 0) maxSpeed = stats.maxSpeed;
+        if (stats.minSpeed > 0) minSpeed = stats.minSpeed;
+        if (stats.acceleration > 0) acc = stats.acceleration;
+        if (stats.deceleration > 0) dec = stats.deceleration;
+        if (stats.rotationSpeed > 0) rot = stats.rotationSpeed;
+        
+        // Load hitbox from config
+        if (stats.hitboxWidth > 0 && stats.hitboxHeight > 0) {
+            hitbox((int)stats.hitboxOffsetX, (int)stats.hitboxOffsetY, stats.hitboxWidth, stats.hitboxHeight);
+        }
+        
+        // Load targeting weights from config
+        if (stats.targetWeights != null && !stats.targetWeights.isEmpty()) {
+            weight.putAll(stats.targetWeights);
+        }
+        
+        // Load turrets and weapons
+        if (stats.turrets == null) return;
+        
+        for (TurretStats turretStats : stats.turrets) {
+            Turret turret = new Turret(this, turretStats.offsetX, turretStats.offsetY, turretStats.rotationSpeed,
+                    turretStats.targetInterval, turretStats.targetChance, turretStats.targetCooldown);
+            turret.range = turretStats.range;
+            add(turret);
+            
+            // Add weapons from config
+            if (turretStats.weapons != null) {
+                for (WeaponStats weaponStats : turretStats.weapons) {
+                    Weapon weapon = createWeaponFromStats(turret, weaponStats);
+                    if (weapon != null) {
+                        add(weapon);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1968,18 +1441,7 @@ abstract class Enemy extends Instance {
 class Recon extends Enemy {
     public Recon(int x, int y) {
         super(x, y, 30);
-        maxSpeed = 2;
-        minSpeed = 0.5;
-        speed = 2;
-        acc = 1;
-        dec = 1;
-        rot = 180;
-
         hitbox(0, 0, 0.7, 0.4); // Add hitbox for collision detection
-
-        add(new Turret(this, 2, 0, 120, 1, 0.3, 7.0));
-        add(new MG(turrets.get(0), 4, 0));
-        add(new Prop("bar", turrets.get(0), 5, 0, 1, 1));
     }
 
     @Override
@@ -1993,33 +1455,27 @@ class Recon extends Enemy {
     public void destroy() {
         alive = false;
         turrets.clear();
-        props.clear();
         GameManager.getInstance().addKromer(5);
         Gamma.kromer = GameManager.getInstance().getKromer();
     }
 }
 
-// new enemy
-// ---------------------------------------------------------------------------------------------
-abstract class Attachment implements Elements.Renderable {
+// ============================================================================================
+// TURRET - Handles weapon mounting and targeting for buildings and enemies
+// ============================================================================================
+
+class Turret implements Elements.Renderable {
     Instance parent;
     double exactX, exactY;
     int offsetX, offsetY; // offset from parent in pixels
     int imgX = 0, imgY = 0; // image offset
     double scaleX = 1, scaleY = 1; // image scale
-    double facing; // angle relative to parent in radians (if parent.facing changes, this also
-                   // changes)
-
-    abstract void update(float deltaTime);
-
-    public abstract void render(Graphics2D g);
-
+    double facing; // angle relative to parent in radians
+    
     String getParent() {
         return parent.getClass().getSimpleName().toLowerCase();
     }
-}
 
-class Turret extends Attachment {
     int zIndex = 10;
 
     // universal
@@ -2084,7 +1540,6 @@ class Turret extends Attachment {
         this.cooldown = cooldown;
     }
 
-    @Override
     void update(float deltaTime) {
         if (GameManager.getInstance().getPower() < 0 && parent instanceof Building) {
             deltaTime = deltaTime / 2;
@@ -2376,7 +1831,6 @@ class Turret extends Attachment {
         return new Point((int) predictedX, (int) predictedY);
     }
 
-    @Override
     public void render(Graphics2D g) {
         if (parent.image == null) {
             return; // parent image not loaded yet
@@ -2440,118 +1894,9 @@ class Turret extends Attachment {
     }
 }
 
-class Prop extends Attachment {
-    int zIndex = 5;
-    String name;
-    Turret turParent;
-
-    Prop(String name, Instance parent, int offsetX, int offsetY, int scaleX, int scaleY) {
-        this.name = name;
-        this.parent = parent;
-        this.offsetX = offsetX;
-        this.offsetY = offsetY;
-        this.scaleX = scaleX;
-        this.scaleY = scaleY;
-        facing = parent.facing;
-    }
-
-    Prop(String name, Turret parent, int offsetX, int offsetY, int scaleX, int scaleY) {
-        this.name = name;
-        this.turParent = parent;
-        this.offsetX = offsetX;
-        this.offsetY = offsetY;
-        this.scaleX = scaleX;
-        this.scaleY = scaleY;
-        facing = parent.facing;
-    }
-
-    // with z-index
-    Prop(String name, Instance parent, int offsetX, int offsetY, int scaleX, int scaleY, int zIndex) {
-        this.name = name;
-        this.parent = parent;
-        this.offsetX = offsetX;
-        this.offsetY = offsetY;
-        this.scaleX = scaleX;
-        this.scaleY = scaleY;
-        this.zIndex = zIndex;
-        facing = parent.facing;
-    }
-
-    Prop(String name, Turret parent, int offsetX, int offsetY, int scaleX, int scaleY, int zIndex) {
-        this.name = name;
-        this.turParent = parent;
-        this.offsetX = offsetX;
-        this.offsetY = offsetY;
-        this.scaleX = scaleX;
-        this.scaleY = scaleY;
-        this.zIndex = zIndex;
-        facing = parent.facing;
-    }
-
-    @Override
-    void update(float deltaTime) {
-    }
-
-    @Override
-    public void render(Graphics2D g) {
-        if (parent != null && parent.image == null) {
-            return; // parent image not loaded yet
-        }
-        if (turParent != null && turParent.parent.image == null) {
-            return; // parent image not loaded yet
-        }
-
-        if (parent != null) {
-            double cos = Math.cos(parent.facing);
-            double sin = Math.sin(parent.facing);
-            double rotatedOffsetX = offsetX * cos - offsetY * sin;
-            double rotatedOffsetY = offsetX * sin + offsetY * cos;
-            exactX = parent.exactX + rotatedOffsetX;
-            exactY = parent.exactY + rotatedOffsetY;
-            facing = parent.facing;
-        } else if (turParent != null) {
-            Instance parentInstance = turParent.parent;
-            double cos = Math.cos(parentInstance.facing);
-            double sin = Math.sin(parentInstance.facing);
-            double turretRotatedX = turParent.offsetX * cos - turParent.offsetY * sin;
-            double turretRotatedY = turParent.offsetX * sin + turParent.offsetY * cos;
-            double turretCos = Math.cos(turParent.facing);
-            double turretSin = Math.sin(turParent.facing);
-            double propRotatedX = offsetX * turretCos - offsetY * turretSin;
-            double propRotatedY = offsetX * turretSin + offsetY * turretCos;
-            exactX = parentInstance.exactX + turretRotatedX + propRotatedX;
-            exactY = parentInstance.exactY + turretRotatedY + propRotatedY;
-            facing = turParent.facing;
-        }
-
-        BufferedImage img = Utilities.load(getParent() + "_" + name, scaleX, scaleY);
-        if (img != null) {
-            // Save the current graphics state
-            Graphics2D g2 = (Graphics2D) g.create();
-
-            int drawX = (int) exactX - (img.getWidth() / 2) + imgX;
-            int drawY = (int) exactY - (img.getHeight() / 2) + imgY;
-            g2.rotate(facing, drawX + (img.getWidth() / 2) - imgX, drawY + (img.getHeight() / 2) - imgY);
-            g2.drawImage(img, drawX, drawY, null);
-
-            // Dispose of the graphics copy to restore original state
-            g2.dispose();
-        }
-    }
-
-    @Override
-    String getParent() {
-        if (parent != null) {
-            return parent.getClass().getSimpleName().toLowerCase();
-        } else if (turParent != null) {
-            return turParent.parent.getClass().getSimpleName().toLowerCase();
-        }
-        return "unknown";
-    }
-}
-
-abstract class Weapon { // can only be binded to a turret, define the weapon's behavior rather than
-                        // providing a display
+class Weapon { // Concrete weapon class - can be instantiated directly or subclassed
+               // All behavior configured via stats (rof, burst, projectileType, etc.)
+               // No need for subclasses unless custom projectile creation is needed
     Turret parent;
     int damage = 10;
     double rof = 1; // seconds between shots
@@ -2559,12 +1904,13 @@ abstract class Weapon { // can only be binded to a turret, define the weapon's b
     BufferedImage projectileImg;
     double pSpeed = 4.0; // cells per second
     int offsetX = 0, offsetY = 0; // offset from turret center in pixels
-    int muzzleX = 0, muzzleY = 0; // projectile creation coordinates
+    double muzzleX = 0, muzzleY = 0; // projectile creation coordinates (use double for precision)
 
     int burst = 1; // shots per trigger pull, enemies will use burst rather than rof
     double burstDelay = 0.5; // seconds between shots in a burst
     int shot = 0; // shots fired in current burst
     double spread = 0; // degrees of random spread
+    String projectileType = "bullet"; // type of projectile to create
 
     double rofTimer = 0.0;
     double burstTimer = 0.0;
@@ -2585,14 +1931,78 @@ abstract class Weapon { // can only be binded to a turret, define the weapon's b
         burstTimer += deltaTime;
         double cos = Math.cos(parent.facing);
         double sin = Math.sin(parent.facing);
-        this.muzzleX = (int) (parent.exactX + (offsetX * cos - offsetY * sin));
-        this.muzzleY = (int) (parent.exactY + (offsetX * sin + offsetY * cos));
+        this.muzzleX = parent.exactX + (offsetX * cos - offsetY * sin);
+        this.muzzleY = parent.exactY + (offsetX * sin + offsetY * cos);
     }
 
-    abstract void fire(double angle, Instance target);
+    /**
+     * Unified fire logic handling both ROF (rate of fire) and burst mechanics.
+     * 
+     * Behavior:
+     * - If burst > 1: Uses burst mode (for enemies mainly)
+     *   - Fire once every burstDelay seconds
+     *   - Can fire up to 'burst' times per trigger
+     *   - After exhausting burst, cannot fire until cooldown expires
+     * - If burst == 1: Uses ROF mode (for buildings mainly)
+     *   - Fire once every rof seconds
+     *   - No burst concept
+     * 
+     * @param angle The angle to fire at
+     * @param target The target instance (for predictive weapons)
+     */
+    void fire(double angle, Instance target) {
+        boolean shouldFire = false;
+        
+        if (burst > 1) {
+            // Burst mode: fire multiple shots with delay between them
+            if (shot < burst) {
+                // Still have shots in current burst
+                if (burstTimer > burstDelay / parent.parent.rofMult) {
+                    shouldFire = true;
+                    shot++;
+                    burstTimer = 0;
+                }
+            }
+            // else: burst exhausted, cannot fire until turret calls resetBurst()
+        } else {
+            // ROF mode: fire once when timer exceeds rof
+            if (rofTimer > rof / parent.parent.rofMult) {
+                shouldFire = true;
+                rofTimer = 0;
+            }
+        }
+        
+        if (shouldFire) {
+            createProjectile(angle, target);
+        }
+    }
+    
+    /**
+     * Create a projectile based on the configured projectileType.
+     * This method can be overridden in subclasses for custom behavior.
+     */
+    protected void createProjectile(double angle, Instance target) {
+        if ("heshell".equalsIgnoreCase(projectileType) || "shell".equalsIgnoreCase(projectileType)) {
+            Gamma.add(new HEShell("heshell", 0.2, 0.2, this, target));
+        } else if ("bullet".equalsIgnoreCase(projectileType)) {
+            // Use small bullet for low damage, regular bullet for high damage
+            if (damage < 5) {
+                Gamma.add(new Bullet("small_bullet", 0.15, 0.15, this));
+            } else {
+                Gamma.add(new Bullet("bullet", 0.2, 0.2, this));
+            }
+        } else {
+            // Default to bullet if type not recognized
+            Gamma.add(new Bullet("bullet", 0.2, 0.2, this));
+        }
+    }
 }
 
-// BUILDING WEAPONS
+// Legacy weapon classes - kept for compatibility but no longer used
+// These can be removed once all configs have been migrated to use the concrete Weapon class
+// Note: Since Weapon is now concrete with unified fire() logic, these subclasses are deprecated.
+// Kept here only for reference or if custom createProjectile() behavior is needed.
+// All new weapons should use config-driven Weapon instantiation via createWeaponFromStats()
 // ---------------------------------------------------------------------------------------------
 class AutoCannonW extends Weapon {
     public AutoCannonW(Turret parent, int offsetX, int offsetY) {
@@ -2602,6 +2012,7 @@ class AutoCannonW extends Weapon {
         rof = 0.3;
         pSpeed = 10;
         spread = 5;
+        projectileType = "bullet";
     }
 
     @Override
@@ -2621,6 +2032,7 @@ class ArtilleryW extends Weapon {
         rof = 5;
         pSpeed = 6;
         spread = 0;
+        projectileType = "heshell";
     }
 
     @Override
@@ -2633,6 +2045,7 @@ class ArtilleryW extends Weapon {
 }
 
 // ENEMY WEAPONS
+// This is now handled by GenericWeapon, but kept for compatibility
 // ---------------------------------------------------------------------------------------------
 class MG extends Weapon {
     public MG(Turret parent, int muzzleX, int muzzleY) {
@@ -2643,6 +2056,7 @@ class MG extends Weapon {
         burstDelay = 0.4;
         pSpeed = 5.0;
         spread = 5;
+        projectileType = "bullet";
     }
 
     @Override
@@ -2662,8 +2076,7 @@ abstract class Projectile extends Instance {
     Weapon parent;
     String imgName;
     int zIndex = 15;
-    ArrayList<Instance> hit = new ArrayList<>(); // store hit instances to avoid hitting the same instance multiple
-                                                 // times
+    ArrayList<Instance> hit = new ArrayList<>(); // store hit instances to avoid hitting the same instance multiple times
 
     double speed = 5.0; // cells per second
     boolean affectAllies = false;
@@ -2702,7 +2115,11 @@ abstract class Projectile extends Instance {
         }
     }
 
-    public void destroy() { // used to check if this projectile should still exist
+    /**
+     * Check if this projectile should be destroyed (out of bounds or pierce exhausted).
+     * Also handles linger check timer updates.
+     */
+    public void destroy() {
         double radius;
         if (image != null) {
             int imgW = image.getWidth();
@@ -2719,7 +2136,11 @@ abstract class Projectile extends Instance {
             alive = false; // exceeded pierce limit
     }
 
-    // SAT algorithm or smthing, i don't know about these stuff
+    /**
+     * Unified collision detection using SAT algorithm.
+     * Only checks instances not already hit (for collision check type).
+     * Returns first instance that collides.
+     */
     Instance collision(String exclude) {
         // Parse exclusion list
         String[] excludedTypes = (exclude != null && !exclude.trim().isEmpty()) ? exclude.trim().split("\\s+")
@@ -2844,6 +2265,16 @@ abstract class Projectile extends Instance {
         return null;
     }
 
+    /**
+     * Apply damage to a target instance.
+     */
+    void damage(Instance target, int damage) {
+        target.health -= (int) (damage * iParent.damageMult);
+        if (target.health <= 0) {
+            target.destroy();
+        }
+    }
+
     // movement type
     void simple(float deltaTime) {
         double moveDistance = speed * Location.cellSize * deltaTime;
@@ -2869,14 +2300,11 @@ abstract class Projectile extends Instance {
         exactY += Math.sin(facing) * moveDistance;
         destroy();
     }
-
-    // interaction methods
-    void damage(Instance target, int damage) {
-        target.health -= (int) (damage * iParent.damageMult);
-        if (target.health <= 0) {
-            target.destroy();
-        }
-    }
+    
+    /**
+     * Trigger area damage explosion.
+     * Creates visual effect and damages all non-allies within radius.
+     */
     void explode(double radius) {
         Empty explosionHolder = new Empty();
         explosionHolder.exactX = this.exactX;
@@ -2927,9 +2355,7 @@ class Bullet extends Projectile {
     void update(float deltaTime) {
         if (!alive)
             return;
-        // simply move forward
         simple(deltaTime);
-
         Instance target = collision("allies projectile");
         if (target != null) {
             damage(target, parent.damage);
@@ -2944,7 +2370,7 @@ class HEShell extends Projectile {
     
     public HEShell(String name, double hitboxW, double hitboxH, Weapon parent, Instance target) {
         super(name, hitboxW, hitboxH, parent);
-        // Use the turret's predict() method to get the actual predicted position
+        
         // facing is already set by Projectile constructor from parent.parent.facing
         
         if (target instanceof Enemy) {
@@ -2973,24 +2399,13 @@ class HEShell extends Projectile {
     void update(float deltaTime) {
         if (!alive)
             return;
-        
-        // Move in the direction the turret was facing when it fired
-        double moveDistance = speed * Location.cellSize * deltaTime;
-        exactX += Math.cos(facing) * moveDistance;
-        exactY += Math.sin(facing) * moveDistance;
-        distanceTraveled += moveDistance;
+        simple(deltaTime);
+        distanceTraveled += speed * Location.cellSize * deltaTime;
 
         // Explode when traveled far enough to reach the predicted target position
         if (distanceTraveled >= travelDistance) {
             explode(1.5);
             return;
-        }
-
-        // Destroy if goes off-screen (safety check)
-        double radius = 20; // approximate shell size
-        if (exactX + radius < 0 || exactX - radius > Gamma.GAME_WIDTH ||
-            exactY + radius < 0 || exactY - radius > Gamma.HEIGHT) {
-            alive = false;
         }
     }
 }

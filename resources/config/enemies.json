@@ -1,0 +1,51 @@
+[
+  {
+    "name": "Recon",
+    "health": 30,
+    "maxSpeed": 2,
+    "minSpeed": 0.5,
+    "acceleration": 1,
+    "deceleration": 1,
+    "rotationSpeed": 180,
+    "kromerReward": 10,
+    "description": "Scout unit. Fast and lightly armored.",
+    "imageName": "recon",
+    "hitbox": {
+      "offsetX": 0,
+      "offsetY": 0,
+      "width": 0.7,
+      "height": 0.4
+    },
+    "turrets": [
+      {
+        "offsetX": 2,
+        "offsetY": 0,
+        "rotationSpeed": 120,
+        "range": 4,
+        "targetInterval": 1,
+        "targetChance": 0.3,
+        "targetCooldown": 7,
+        "weapons": [
+          {
+            "name": "MG",
+            "damage": 2,
+            "rof": 0.4,
+            "projectileSpeed": 5,
+            "offsetX": 4,
+            "offsetY": 0,
+            "projectileType": "bullet",
+            "pierce": 0,
+            "burst": 5,
+            "burstDelay": 0.4,
+            "spread": 5
+          }
+        ]
+      }
+    ],
+    "targetWeights": {
+      "Headquarter": 50,
+      "AutoCannon": 150,
+      "PowerPlant": 100
+    }
+  }
+]
