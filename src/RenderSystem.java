@@ -26,8 +26,15 @@ public class RenderSystem {
     private static final BasicStroke PREVIEW_STROKE_THICK = new BasicStroke(2);
     private static final BasicStroke PREVIEW_STROKE_THIN = new BasicStroke(1);
     
+    // Cached menu background image
+    private BufferedImage menuBackgroundImg;
+    private BufferedImage menuButtonImg;
+    
     public RenderSystem(Gamma gamma) {
         this.gamma = gamma;
+        // Pre-load menu assets
+        this.menuBackgroundImg = Utilities.load("title", 1920.0 / 1920, 1080.0 / 1080);
+        this.menuButtonImg = Utilities.load("menu_button", 1.0, 1.0);
     }
     
     /**
@@ -57,6 +64,14 @@ public class RenderSystem {
     // ========== MENU RENDERING ==========
     
     private void renderMenus(Graphics2D g2d) {
+        // Draw cached background image with reduced opacity
+        if (menuBackgroundImg != null) {
+            Composite orig = g2d.getComposite();
+            g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.3f));
+            g2d.drawImage(menuBackgroundImg, 0, 0, 1920, 1080, null);
+            g2d.setComposite(orig);
+        }
+        
         g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 64f));
         g2d.setColor(Color.WHITE);
         String title = "Battle Control";
@@ -64,9 +79,8 @@ public class RenderSystem {
         g2d.drawString(title, (1920 - tfm.stringWidth(title)) / 2, 220);
         
         // Shared button image (drawn at original size; top-left anchored)
-        BufferedImage btnImg = Utilities.load("menu_button", 1.0, 1.0);
-        int btnW = btnImg != null ? btnImg.getWidth() : 300;
-        int btnH = btnImg != null ? btnImg.getHeight() : 60;
+        int btnW = menuButtonImg != null ? menuButtonImg.getWidth() : 300;
+        int btnH = menuButtonImg != null ? menuButtonImg.getHeight() : 60;
         int vGap = btnH + 24; // vertical spacing between buttons
         int bx = 810; // chosen left offset for all menu buttons (top-left placement)
         
@@ -74,11 +88,11 @@ public class RenderSystem {
         FontMetrics bfm = g2d.getFontMetrics();
         
         if (gamma.currentState == Gamma.GameState.MAIN_MENU) {
-            renderMainMenu(g2d, btnImg, bx, btnW, btnH, vGap, bfm);
+            renderMainMenu(g2d, menuButtonImg, bx, btnW, btnH, vGap, bfm);
         } else if (gamma.currentState == Gamma.GameState.MAP_SELECT) {
-            renderMapSelect(g2d, btnImg, bx, btnW, btnH, vGap, bfm);
+            renderMapSelect(g2d, menuButtonImg, bx, btnW, btnH, vGap, bfm);
         } else if (gamma.currentState == Gamma.GameState.MODE_SELECT) {
-            renderModeSelect(g2d, btnImg, bx, btnW, btnH, vGap, bfm);
+            renderModeSelect(g2d, menuButtonImg, bx, btnW, btnH, vGap, bfm);
         }
     }
     
@@ -116,27 +130,41 @@ public class RenderSystem {
         String prompt = "Select Map";
         g2d.drawString(prompt, (1920 - bfm.stringWidth(prompt)) / 2, 320);
         
-        int byPlain = 420;
-        int byBack = byPlain + vGap;
+        // List of available maps
+        String[] maps = new String[] { "Plain", "Outer Space" };
+        int by = 420;
+        ArrayList<Rectangle> mapRects = new ArrayList<>();
         
-        if (btnImg != null) g2d.drawImage(btnImg, bx, byPlain, null);
-        if (btnImg != null) g2d.drawImage(btnImg, bx, byBack, null);
+        // Draw map buttons
+        for (int i = 0; i < maps.length; i++) {
+            int y = by + i * vGap;
+            if (btnImg != null) g2d.drawImage(btnImg, bx, y, null);
+            g2d.setColor(Color.WHITE);
+            g2d.drawString(maps[i], bx + (btnW - bfm.stringWidth(maps[i])) / 2,
+                    y + (btnH - (bfm.getAscent() + bfm.getDescent())) / 2 + bfm.getAscent());
+            mapRects.add(new Rectangle(bx, y, btnW, btnH));
+        }
         
+        // Back button
+        int yBack = by + maps.length * vGap;
+        if (btnImg != null) g2d.drawImage(btnImg, bx, yBack, null);
         g2d.setColor(Color.WHITE);
-        g2d.drawString("Plain", bx + (btnW - bfm.stringWidth("Plain")) / 2,
-                byPlain + (btnH - (bfm.getAscent() + bfm.getDescent())) / 2 + bfm.getAscent());
         g2d.drawString("Back", bx + (btnW - bfm.stringWidth("Back")) / 2,
-                byBack + (btnH - (bfm.getAscent() + bfm.getDescent())) / 2 + bfm.getAscent());
-        
-        Rectangle plainRect = new Rectangle(bx, byPlain, btnW, btnH);
-        Rectangle backRect = new Rectangle(bx, byBack, btnW, btnH);
+                yBack + (btnH - (bfm.getAscent() + bfm.getDescent())) / 2 + bfm.getAscent());
+        Rectangle backRect = new Rectangle(bx, yBack, btnW, btnH);
         
         if (gamma.m1) {
-            if (plainRect.contains(gamma.mx, gamma.my)) {
-                gamma.selectedMap = "plain";
-                gamma.currentState = Gamma.GameState.MODE_SELECT;
-                gamma.m1 = false;
-            } else if (backRect.contains(gamma.mx, gamma.my)) {
+            // Map selection
+            for (int i = 0; i < maps.length; i++) {
+                if (mapRects.get(i).contains(gamma.mx, gamma.my)) {
+                    gamma.selectedMap = maps[i].toLowerCase();
+                    gamma.currentState = Gamma.GameState.MODE_SELECT;
+                    gamma.m1 = false;
+                    return;
+                }
+            }
+            // Back button
+            if (backRect.contains(gamma.mx, gamma.my)) {
                 gamma.currentState = Gamma.GameState.MAIN_MENU;
                 gamma.m1 = false;
             }
@@ -291,8 +319,24 @@ public class RenderSystem {
             }
         }
         renderQueue.sort(Comparator.comparingInt(obj -> obj.zIndex));
+
         for (Elements obj : renderQueue) {
             obj.r.render(g2d);
+        }
+        
+        // Draw repair indicators last - on top of everything else
+        for (Instance instance : GameManager.getInstance().getInstances()) {
+            if (instance instanceof Building) {
+                Building building = (Building) instance;
+                if (building.repairing) {
+                    BufferedImage repairImg = Utilities.load("repairing", 1.0, 1.0);
+                    if (repairImg != null) {
+                        int centerX = building.x * Location.cellSize + (building.width * Location.cellSize) / 2;
+                        int centerY = building.y * Location.cellSize + (building.height * Location.cellSize) / 2;
+                        g2d.drawImage(repairImg, centerX - 20, centerY - 20, 40, 40, null);
+                    }
+                }
+            }
         }
         
         // When hovering over an instance, draw its range and health bar
@@ -480,6 +524,10 @@ public class RenderSystem {
         g2d.setFont(Utilities.loadFont("Romanov", Font.PLAIN, 15f));
         g2d.setStroke(new BasicStroke(1)); // information about the cursor location
         g2d.drawString(gamma.mx + ", " + gamma.my, gamma.mx + 20, gamma.my + 50);
+        // also draw cell coordinates
+        int cellX = gamma.mx / Location.cellSize;
+        int cellY = gamma.my / Location.cellSize;
+        g2d.drawString("Cell: " + cellX + ", " + cellY, gamma.mx + 20, gamma.my + 70);
     }
     
     private void renderErrorMessage(Graphics2D g2d) {

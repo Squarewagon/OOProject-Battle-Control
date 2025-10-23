@@ -8,11 +8,12 @@ import com.google.gson.JsonObject;
 
 /**
  * Loads and caches all game configuration from JSON files.
- * Provides access to building and enemy stats.
+ * Provides access to building, enemy, and weapon stats.
  * 
  * Files:
  * - resources/config/buildings.json
  * - resources/config/enemies.json
+ * - resources/config/weapons.json
  */
 public class ConfigManager {
     private static final String CONFIG_PATH = "resources/config/";
@@ -20,11 +21,13 @@ public class ConfigManager {
     
     private Map<String, BuildingStats> buildingStats;
     private Map<String, EnemyStats> enemyStats;
+    private Map<String, WeaponDefinition> weaponStats;
     private boolean loaded = false;
     
     public ConfigManager() {
         this.buildingStats = new HashMap<>();
         this.enemyStats = new HashMap<>();
+        this.weaponStats = new HashMap<>();
     }
     
     /**
@@ -35,14 +38,37 @@ public class ConfigManager {
         if (loaded) return;
         
         try {
+            loadWeaponConfigs();
             loadBuildingConfigs();
             loadEnemyConfigs();
             loaded = true;
+            System.out.println("[ConfigManager] Loaded " + weaponStats.size() + " weapon types");
             System.out.println("[ConfigManager] Loaded " + buildingStats.size() + " building types");
             System.out.println("[ConfigManager] Loaded " + enemyStats.size() + " enemy types");
         } catch (Exception e) {
             System.err.println("[ConfigManager] Error loading configs: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Load weapon configuration from weapons.json
+     */
+    private void loadWeaponConfigs() throws Exception {
+        File file = new File(CONFIG_PATH + "weapons.json");
+        if (!file.exists()) {
+            System.err.println("[ConfigManager] weapons.json not found at " + file.getAbsolutePath());
+            return;
+        }
+        
+        try (FileReader reader = new FileReader(file)) {
+            JsonArray weaponsArray = gson.fromJson(reader, JsonArray.class);
+            
+            for (int i = 0; i < weaponsArray.size(); i++) {
+                JsonObject weaponObj = weaponsArray.get(i).getAsJsonObject();
+                WeaponDefinition stats = parseWeaponDefinition(weaponObj);
+                weaponStats.put(stats.name, stats);
+            }
         }
     }
     
@@ -155,6 +181,10 @@ public class ConfigManager {
             stats.kromerReward = obj.get("kromerReward").getAsInt();
         }
         
+        if (obj.has("zIndex")) {
+            stats.zIndex = obj.get("zIndex").getAsInt();
+        }
+        
         // Parse hitbox
         if (obj.has("hitbox")) {
             JsonObject hitboxObj = obj.get("hitbox").getAsJsonObject();
@@ -231,16 +261,14 @@ public class ConfigManager {
     }
     
     /**
-     * Parse a weapon stats object from JSON
+     * Parse a weapon definition from weapons.json
      */
-    private WeaponStats parseWeaponStats(JsonObject obj) {
-        WeaponStats stats = new WeaponStats();
+    private WeaponDefinition parseWeaponDefinition(JsonObject obj) {
+        WeaponDefinition stats = new WeaponDefinition();
         stats.name = obj.get("name").getAsString();
         stats.damage = obj.get("damage").getAsInt();
         stats.rof = obj.get("rof").getAsDouble();
         stats.projectileSpeed = obj.get("projectileSpeed").getAsDouble();
-        stats.offsetX = obj.get("offsetX").getAsInt();
-        stats.offsetY = obj.get("offsetY").getAsInt();
         stats.projectileType = obj.get("projectileType").getAsString();
         
         if (obj.has("pierce")) {
@@ -254,6 +282,69 @@ public class ConfigManager {
         }
         if (obj.has("spread")) {
             stats.spread = obj.get("spread").getAsDouble();
+        }
+        if (obj.has("description")) {
+            stats.description = obj.get("description").getAsString();
+        }
+        
+        return stats;
+    }
+    
+    /**
+     * Parse a weapon stats object from JSON (for use in turret definitions).
+     * Now supports the clean format where only name and offset are specified in turrets,
+     * and all other stats come from weapons.json.
+     * 
+     * Format in turrets:
+     * { "name": "WeaponName", "offsetX": 10, "offsetY": 0 }
+     * 
+     * All stats (damage, rof, projectileType, etc.) are loaded from weapons.json via the name reference.
+     */
+    private WeaponStats parseWeaponStats(JsonObject obj) {
+        WeaponStats stats = new WeaponStats();
+        String weaponName = obj.get("name").getAsString();
+        stats.name = weaponName;
+        stats.offsetX = obj.get("offsetX").getAsInt();
+        stats.offsetY = obj.get("offsetY").getAsInt();
+        
+        // Check if weapon is defined in weapons.json
+        WeaponDefinition weaponDef = weaponStats.get(weaponName);
+        if (weaponDef != null) {
+            // Use stats from weapons.json
+            stats.damage = weaponDef.damage;
+            stats.rof = weaponDef.rof;
+            stats.projectileSpeed = weaponDef.projectileSpeed;
+            stats.projectileType = weaponDef.projectileType;
+            stats.pierce = weaponDef.pierce;
+            stats.burst = weaponDef.burst;
+            stats.burstDelay = weaponDef.burstDelay;
+            stats.spread = weaponDef.spread;
+        } else {
+            // Fallback: try to parse from inline definition (backwards compatibility)
+            if (obj.has("damage")) {
+                stats.damage = obj.get("damage").getAsInt();
+            }
+            if (obj.has("rof")) {
+                stats.rof = obj.get("rof").getAsDouble();
+            }
+            if (obj.has("projectileSpeed")) {
+                stats.projectileSpeed = obj.get("projectileSpeed").getAsDouble();
+            }
+            if (obj.has("projectileType")) {
+                stats.projectileType = obj.get("projectileType").getAsString();
+            }
+            if (obj.has("pierce")) {
+                stats.pierce = obj.get("pierce").getAsInt();
+            }
+            if (obj.has("burst")) {
+                stats.burst = obj.get("burst").getAsInt();
+            }
+            if (obj.has("burstDelay")) {
+                stats.burstDelay = obj.get("burstDelay").getAsDouble();
+            }
+            if (obj.has("spread")) {
+                stats.spread = obj.get("spread").getAsDouble();
+            }
         }
         
         return stats;
@@ -276,4 +367,29 @@ public class ConfigManager {
     public Map<String, EnemyStats> getAllEnemyStats() {
         return new HashMap<>(enemyStats);
     }
+    
+    public WeaponDefinition getWeaponStats(String name) {
+        return weaponStats.get(name);
+    }
+    
+    public Map<String, WeaponDefinition> getAllWeaponStats() {
+        return new HashMap<>(weaponStats);
+    }
 }
+
+/**
+ * Holds weapon configuration data loaded from weapons.json
+ */
+class WeaponDefinition {
+    public String name;
+    public int damage;
+    public double rof; // Rate of fire (cooldown between bursts in seconds)
+    public double projectileSpeed;
+    public String projectileType;
+    public int pierce;
+    public int burst; // Number of shots per burst (default 1)
+    public double burstDelay; // Interval between shots in a burst
+    public double spread; // Angular spread in degrees
+    public String description;
+}
+

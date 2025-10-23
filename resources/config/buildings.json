@@ -31,8 +31,8 @@
   {
     "name": "OilRig",
     "buildingType": "productive",
-    "cost": 500,
-    "buildTime": 20,
+    "cost": 300,
+    "buildTime": 12,
     "buildRange": 3,
     "width": 3,
     "height": 2,
@@ -45,8 +45,8 @@
   {
     "name": "RadarDish",
     "buildingType": "productive",
-    "cost": 800,
-    "buildTime": 25,
+    "cost": 500,
+    "buildTime": 17,
     "buildRange": 4,
     "width": 2,
     "height": 2,
@@ -60,8 +60,8 @@
   {
     "name": "HeavyOrdnanceCenter",
     "buildingType": "productive",
-    "cost": 800,
-    "buildTime": 30,
+    "cost": 700,
+    "buildTime": 25,
     "buildRange": 5,
     "width": 3,
     "height": 3,
@@ -78,15 +78,9 @@
         "range": 14,
         "weapons": [
           {
-            "name": "Artillery",
-            "damage": 75,
-            "rof": 5,
-            "projectileSpeed": 6,
+            "name": "ArtilleryW",
             "offsetX": 25,
-            "offsetY": 0,
-            "projectileType": "shell",
-            "pierce": 0,
-            "spread": 0
+            "offsetY": 0
           }
         ]
       }
@@ -96,7 +90,7 @@
     "name": "AutoCannon",
     "buildingType": "offensive",
     "cost": 75,
-    "buildTime": 7,
+    "buildTime": 5,
     "buildRange": 0,
     "width": 1,
     "height": 1,
@@ -114,14 +108,8 @@
         "weapons": [
           {
             "name": "AutoCannonW",
-            "damage": 5,
-            "rof": 0.3,
-            "projectileSpeed": 10,
             "offsetX": 15,
-            "offsetY": 0,
-            "projectileType": "bullet",
-            "pierce": 0,
-            "spread": 5
+            "offsetY": 0
           }
         ]
       }
@@ -130,8 +118,8 @@
   {
     "name": "Artillery",
     "buildingType": "offensive",
-    "cost": 500,
-    "buildTime": 23,
+    "cost": 300,
+    "buildTime": 15,
     "buildRange": 0,
     "width": 2,
     "height": 2,
@@ -149,14 +137,8 @@
         "weapons": [
           {
             "name": "ArtilleryW",
-            "damage": 75,
-            "rof": 5,
-            "projectileSpeed": 6,
             "offsetX": 25,
-            "offsetY": 0,
-            "projectileType": "shell",
-            "pierce": 0,
-            "spread": 0
+            "offsetY": 0
           }
         ]
       }

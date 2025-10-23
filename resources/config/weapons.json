@@ -1,0 +1,50 @@
+[
+  {
+    "name": "AutoCannonW",
+    "damage": 5,
+    "rof": 0.3,
+    "projectileSpeed": 10,
+    "projectileType": "bullet",
+    "pierce": 0,
+    "burst": 1,
+    "burstDelay": 0,
+    "spread": 5,
+    "description": "Basic automated cannon. Rapid fire with low damage."
+  },
+  {
+    "name": "ArtilleryW",
+    "damage": 75,
+    "rof": 5,
+    "projectileSpeed": 6,
+    "projectileType": "heshell",
+    "pierce": 0,
+    "burst": 1,
+    "burstDelay": 0,
+    "spread": 0,
+    "description": "Heavy artillery. Slow but powerful explosive shells."
+  },
+  {
+    "name": "MG",
+    "damage": 3,
+    "rof": 1,
+    "projectileSpeed": 5,
+    "projectileType": "small_bullet",
+    "pierce": 0,
+    "burst": 5,
+    "burstDelay": 0.4,
+    "spread": 5,
+    "description": "Machine gun. Burst fire with light ammunition."
+  },
+  {
+    "name": "Cannon",
+    "damage": 30,
+    "rof": 1,
+    "projectileSpeed": 10,
+    "projectileType": "cannonshell",
+    "pierce": 0,
+    "burst": 1,
+    "burstDelay": 1,
+    "spread": 10,
+    "description": "Heavy cannon. Burst of explosive rounds."
+  }
+]

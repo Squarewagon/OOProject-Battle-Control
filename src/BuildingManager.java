@@ -42,6 +42,9 @@ public class BuildingManager {
         gamma.turretRanges.clear();
         gamma.previewWidth = 0;
         gamma.previewHeight = 0;
+        // Only clear the construction flag for the specific building type, not both
+        // This will be handled more specifically when canceling a specific type
+        // For now, clearing both is correct for full mode exit
         gamma.proOnCons = false;
         gamma.offOnCons = false;
         gamma.buildable.clear();
@@ -124,7 +127,17 @@ public class BuildingManager {
      * Clear all build/repair/sell modes
      */
     public void clearAllModes() {
-        clearBuildMode();
+        // Clear the main build mode variables (don't touch proOnCons/offOnCons - those are managed by Icon)
+        gamma.buildMode = false;
+        gamma.buildingToBuild = null;
+        gamma.iconToBuild = null;
+        gamma.turretOffsets.clear();
+        gamma.turretRanges.clear();
+        gamma.previewWidth = 0;
+        gamma.previewHeight = 0;
+        gamma.buildable.clear();
+        gamma.unbuildable.clear();
+        
         repairMode = false;
         sellMode = false;
     }

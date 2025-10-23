@@ -81,47 +81,47 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
     ArrayList<Point> unbuildable = new ArrayList<>();
 
     public static int wave = 0;
-    
+
     // Initialize building list from ConfigManager
     void init() {
         ConfigManager config = gameManager.getConfigManager();
-        
+
         // Define the building load order for UI display
         String[] buildingOrder = {
-            "Headquarter", "PowerPlant", "OilRig", "RadarDish", "HeavyOrdnanceCenter",
-            "AutoCannon", "LaserTower", "MissileLauncher"
+                "Headquarter", "PowerPlant", "OilRig", "RadarDish", "HeavyOrdnanceCenter",
+                "AutoCannon", "LaserTower", "MissileLauncher"
         };
-        
+
         // Load buildings in defined order to ensure consistent UI display
         for (String buildingName : buildingOrder) {
             BuildingStats stats = config.getAllBuildingStats().get(buildingName);
             if (stats != null) {
                 Icon icon = new Icon(stats);
-                
+
                 if ("productive".equals(stats.buildingType)) {
                     productive.add(icon);
                 } else if ("offensive".equals(stats.buildingType)) {
                     offensive.add(icon);
                 }
-                
+
                 iconByClass.putIfAbsent(stats.buildingClass, icon);
             }
         }
-        
+
         // Add any buildings not in the predefined order (for mod support)
         for (BuildingStats stats : config.getAllBuildingStats().values()) {
             if (iconByClass.containsKey(stats.buildingClass)) {
                 continue; // Already added
             }
-            
+
             Icon icon = new Icon(stats);
-            
+
             if ("productive".equals(stats.buildingType)) {
                 productive.add(icon);
             } else if ("offensive".equals(stats.buildingType)) {
                 offensive.add(icon);
             }
-            
+
             iconByClass.putIfAbsent(stats.buildingClass, icon);
         }
     }
@@ -161,6 +161,11 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
                 if (constructionTimer >= stats.buildTime) {
                     ready = true;
                     building = false;
+                    // DON'T clear the construction flag here - the icon is still "ready" and
+                    // blocking other constructions
+                    // The flag will be cleared when the icon is either:
+                    // 1. Placed in the world (ready becomes false), or
+                    // 2. Refunded via right-click (both building and ready become false)
                 }
             }
         }
@@ -168,15 +173,17 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
 
     public Gamma() {
         gameInstance = this; // Set static reference
-        if (gameManager == null) gameManager = new GameManager(); // Initialize once
-        if (gameLoop == null) gameLoop = new GameLoop(gameManager); // Initialize once
+        if (gameManager == null)
+            gameManager = new GameManager(); // Initialize once
+        if (gameLoop == null)
+            gameLoop = new GameLoop(gameManager); // Initialize once
         inputManager = new InputManager(this); // REFACTORED: Initialize input manager
         renderSystem = new RenderSystem(this); // REFACTORED: Initialize render system
         buildingManager = new BuildingManager(this); // REFACTORED: Initialize building manager
-        
+
         // Load all configuration from JSON files
         gameManager.getConfigManager().loadConfigs();
-        
+
         setPreferredSize(new Dimension(1920, 1080));
         setBackground(Color.BLACK);
         setDoubleBuffered(true); // Important for smooth rendering
@@ -223,13 +230,13 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         Location.occupancy.clear();
         Location.buildingOccupancy.clear();
         Location.adjacency.clear();
-        
+
         // Map selection (extend when new maps are added)
         if ("plain".equalsIgnoreCase(selectedMap)) {
             new Plain();
-        } else {
-            new Plain(); // fallback
-        }
+        } else if ("outer space".equalsIgnoreCase(selectedMap)) {
+            new OuterSpace();
+        } else new Plain(); // fallback
 
         // Mode configuration - set Kromer based on selected mode
         gameManager.initializeKromerForMode(selectedMode);
@@ -261,11 +268,13 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         Location.path.clear();
 
         // Reset UI/game flags
-        buildingManager.clearAllModes();  // This clears buildMode, repairMode, sellMode, and preview data
+        buildingManager.clearAllModes(); // This clears buildMode, repairMode, sellMode, and preview data
         iconToBuild = null;
         buildingToBuild = null;
         tabSelected = "productive";
         err = "";
+        proOnCons = false;
+        offOnCons = false;
 
         // Reset construction icons state
         for (Icon icon : productive) {
@@ -402,10 +411,10 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
             for (Icon icon : offensive) {
                 icon.update(deltaTime);
             }
-            
+
             // Update game objects (instances, wave, etc.)
             gameLoop.updateGameObjects(deltaTime, Instances, iQueue);
-            
+
             // Update build mode placement
             if (buildMode && m1 && buildingToBuild != null) {
                 int cellX = mx / Location.cellSize;
@@ -438,25 +447,26 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
                 }
                 m1 = false; // consume the click
             }
-            
+
             // Update sell/repair mode interactions via BuildingManager
             if ((buildingManager.isSellMode() || buildingManager.isRepairMode()) && m1) {
                 int cellX = Math.max(0, Math.min(Location.cols - 1, mx / Location.cellSize));
                 int cellY = Math.max(0, Math.min(Location.rows - 1, my / Location.cellSize));
-                
+
                 if (buildingManager.processCellInteraction(cellX, cellY, gameManager)) {
                     m1 = false; // consume click once processed
                 }
             }
-            
+
             // Update cursor based on game mode
-            String wantedCursor = gameLoop.getDesiredCursor(buildMode, buildingManager.isRepairMode(), buildingManager.isSellMode());
+            String wantedCursor = gameLoop.getDesiredCursor(buildMode, buildingManager.isRepairMode(),
+                    buildingManager.isSellMode());
             if (!wantedCursor.equals(currentCursorName)) {
                 Utilities.setCustomCursor(this, wantedCursor, -16, -16);
                 currentCursorName = wantedCursor;
             }
         }
-        
+
         // Debounced repaint so menus animate/respond
         repaint();
 
@@ -477,7 +487,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
         Graphics2D g2d = (Graphics2D) g;
-        
+
         // Delegate all rendering to RenderSystem
         renderSystem.render(g2d);
     }
@@ -507,6 +517,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
 
     /**
      * Sell a building and return the refund amount to the player
+     * 
      * @param building the building to sell
      * @return true if the sale was successful
      */
@@ -514,7 +525,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         if (building instanceof Headquarter) {
             return false; // Cannot sell HQ
         }
-        
+
         Icon icon = iconByClass.get(building.getClass());
         if (icon != null) {
             int refund = (int) (icon.stats.cost * 0.5f * (building.health / (float) building.maxHealth));
@@ -525,7 +536,6 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         return false;
     }
 
-   
     // this method will be used globally to update buildable cells in build mode
     public void refresh() {
         buildable.clear();
@@ -789,6 +799,28 @@ class Plain extends Location {
     }
 }
 
+class OuterSpace extends Location {
+    public OuterSpace() {
+        bg = new Color(0, 0, 0);
+        pc = new Color(255, 255, 255);
+
+        start = new Point(-5, 25);
+        mapPath(0, 25, 37, 25);
+        mapPath(37, 25, 37, 1);
+        mapPath(37, 1, 1, 1);
+        mapPath(1, 1, 1, 20);
+        mapPath(1, 20, 34, 20);
+        mapPath(34, 20, 34, 4);
+        mapPath(34, 4, 11, 4);
+        mapPath(11, 4, 11, 11);
+        mapPath(11, 11, 19, 11);
+
+        Gamma.add(new Empty());
+
+        Gamma.add(new Headquarter(20, 10));
+    }
+}
+
 abstract class Instance implements Elements.Renderable {
     int x, y; // in cells
     double exactX, exactY;
@@ -799,7 +831,7 @@ abstract class Instance implements Elements.Renderable {
     ArrayList<Turret> turrets = new ArrayList<>();
     ArrayList<Weapon> weapons = new ArrayList<>();
     ArrayList<Utilities.Animation> anims = new ArrayList<>();
-    int zIndex = 0; // Default Z-index
+    int zIndex = 3; // Default Z-index (higher than buildings, for buildings/enemies)
     ArrayList<Hitbox> hitboxes = new ArrayList<>(); // Multiple hitboxes per instance
     double timer = 0; // general purpose timer
     double trueTimer = 0; // general purpose timer that isn't affected by time dilation
@@ -870,8 +902,9 @@ abstract class Instance implements Elements.Renderable {
 
     // Helper method to create weapons from config stats
     protected Weapon createWeaponFromStats(Turret turret, WeaponStats stats) {
-        // Create a weapon with all stats from config
+        // Create a weapon with all stats (merged from weapons.json via name reference)
         Weapon weapon = new Weapon(turret, stats.offsetX, stats.offsetY);
+        weapon.name = stats.name;
         weapon.damage = stats.damage;
         weapon.rof = stats.rof;
         weapon.pSpeed = stats.projectileSpeed;
@@ -900,7 +933,8 @@ class Empty extends Instance {
     @Override
     public void render(Graphics2D g) {
         if (!hasPlayedAnimation) {
-            // Utilities.animLoad("explode", Gamma.GAME_WIDTH / 2, Gamma.HEIGHT / 2, 2, 2, this, true);
+            // Utilities.animLoad("explode", Gamma.GAME_WIDTH / 2, Gamma.HEIGHT / 2, 2, 2,
+            // this, true);
             hasPlayedAnimation = true;
         }
     }
@@ -937,7 +971,7 @@ abstract class Building extends Instance {
      */
     private void setupBuildingLayout(int width, int height, int power) {
         hitbox((width * Location.cellSize - Location.cellSize) / 2,
-                (height * Location.cellSize - Location.cellSize) / 2, width, height);  
+                (height * Location.cellSize - Location.cellSize) / 2, width, height);
         this.power = power;
         imgX = (width * Location.cellSize) / 2;
         imgY = (height * Location.cellSize) / 2;
@@ -981,12 +1015,13 @@ abstract class Building extends Instance {
             if (repairTimer >= 0.2 && GameManager.getInstance().getKromer() > 0) {
                 GameManager.getInstance().addKromer(-1);
                 Gamma.kromer = GameManager.getInstance().getKromer();
-                health += 2;
+                health += 1;
                 repairTimer = 0;
             }
         }
 
-        if (nanoTimer > 0f) nanoTimer = Math.max(0f, nanoTimer - deltaTime);
+        if (nanoTimer > 0f)
+            nanoTimer = Math.max(0f, nanoTimer - deltaTime);
     }
 
     @Override
@@ -1028,22 +1063,28 @@ abstract class Building extends Instance {
             }
         }
 
+        if (this instanceof Headquarter) {
+            System.exit(404);
+            System.err.println("rip BOZO");
+        }
+
         turrets.clear();
         GameManager.getInstance().addPower(-this.power);
         Gamma.power = GameManager.getInstance().getPower();
         alive = false;
 
-        // Cancel construction of any buildings that depend on this one as a prerequisite
+        // Cancel construction of any buildings that depend on this one as a
+        // prerequisite
         String destroyedBuildingName = this.getClass().getSimpleName();
         Gamma gamma = Gamma.getInstance();
-        
+
         // Check productive buildings
         for (Gamma.Icon icon : Gamma.productive) {
             if (icon.stats.prerequisites.contains(destroyedBuildingName) && (icon.building || icon.ready)) {
                 // Refund full cost (building under construction hasn't taken damage)
                 int refund = icon.stats.cost;
                 GameManager.getInstance().addKromer(refund);
-                
+
                 // Reset construction state
                 icon.building = false;
                 icon.ready = false;
@@ -1051,14 +1092,14 @@ abstract class Building extends Instance {
                 gamma.proOnCons = false;
             }
         }
-        
+
         // Check offensive buildings
         for (Gamma.Icon icon : Gamma.offensive) {
             if (icon.stats.prerequisites.contains(destroyedBuildingName) && (icon.building || icon.ready)) {
                 // Refund full cost (building under construction hasn't taken damage)
                 int refund = icon.stats.cost;
                 GameManager.getInstance().addKromer(refund);
-                
+
                 // Reset construction state
                 icon.building = false;
                 icon.ready = false;
@@ -1080,14 +1121,16 @@ abstract class Building extends Instance {
      * Called automatically from Building constructor.
      */
     private void loadFromConfig() {
-        BuildingStats stats = GameManager.getInstance().getConfigManager().getAllBuildingStats().get(this.getClass().getSimpleName());
-        if (stats == null || stats.turrets == null) return;
-        
+        BuildingStats stats = GameManager.getInstance().getConfigManager().getAllBuildingStats()
+                .get(this.getClass().getSimpleName());
+        if (stats == null || stats.turrets == null)
+            return;
+
         for (TurretStats turretStats : stats.turrets) {
             Turret turret = new Turret(this, turretStats.offsetX, turretStats.offsetY, turretStats.rotationSpeed);
             turret.range = turretStats.range;
             add(turret);
-            
+
             // Add weapons from config
             if (turretStats.weapons != null) {
                 for (WeaponStats weaponStats : turretStats.weapons) {
@@ -1201,14 +1244,15 @@ abstract class Enemy extends Instance {
     double dec = 1; // cells per second squared
     int rot = 90; // rotation in degrees per second
     int pathIndex = -1;
-    int zIndex = 3; // Default Z-index (higher than buildings)
+    // NOTE: zIndex is inherited from Instance, don't redeclare it here
+    int kromerReward = 5; // kromer given when killed (default)
 
     boolean rotating = false; // is currently rotating
 
     HashMap<String, Integer> weight = new HashMap<>(); // store weights for target selection
 
-    public Enemy(int x, int y, int health) {
-        super(x, y, health);
+    public Enemy(int x, int y) {
+        super(x, y, 0); // health will be set by loadFromConfig()
         if (Gamma.selectedMode.equals("blitzkrieg")) {
             speedMult *= 1.5;
         }
@@ -1231,8 +1275,15 @@ abstract class Enemy extends Instance {
             double angle = Math.atan2(next.y - y, next.x - x);
             facing = angle;
         }
-        setWeight();
-        loadFromConfig();
+        loadFromConfig(); // Load all stats from config
+    }
+
+    @Override
+    public void destroy() {
+        alive = false;
+        turrets.clear();
+        GameManager.getInstance().addKromer(kromerReward);
+        Gamma.kromer = GameManager.getInstance().getKromer();
     }
 
     @Override
@@ -1366,8 +1417,6 @@ abstract class Enemy extends Instance {
         }
     }
 
-    abstract void setWeight();
-
     void weight(String name, int value) {
         String key = name.toLowerCase();
         if (!weight.containsKey(key)) {
@@ -1394,35 +1443,63 @@ abstract class Enemy extends Instance {
      * Called automatically from Enemy constructor.
      */
     private void loadFromConfig() {
-        EnemyStats stats = GameManager.getInstance().getConfigManager().getAllEnemyStats().get(this.getClass().getSimpleName());
-        if (stats == null) return;
-        
+        EnemyStats stats = GameManager.getInstance().getConfigManager().getAllEnemyStats()
+                .get(this.getClass().getSimpleName());
+        if (stats == null)
+            return;
+
+        // Load health from config
+        if (stats.health > 0) {
+            this.health = stats.health;
+            this.maxHealth = stats.health;
+        }
+
+        // Load reward from config
+        if (stats.kromerReward > 0) {
+            this.kromerReward = stats.kromerReward;
+        }
+
+        // Load rendering layer from config
+        if (stats.zIndex > 0) {
+            this.zIndex = stats.zIndex;
+        }
+
         // Load movement stats from config
-        if (stats.maxSpeed > 0) maxSpeed = stats.maxSpeed;
-        if (stats.minSpeed > 0) minSpeed = stats.minSpeed;
-        if (stats.acceleration > 0) acc = stats.acceleration;
-        if (stats.deceleration > 0) dec = stats.deceleration;
-        if (stats.rotationSpeed > 0) rot = stats.rotationSpeed;
-        
+        if (stats.maxSpeed > 0)
+            maxSpeed = stats.maxSpeed;
+        if (stats.minSpeed > 0)
+            minSpeed = stats.minSpeed;
+        speed = maxSpeed; // Initialize speed to maxSpeed
+        if (stats.acceleration > 0)
+            acc = stats.acceleration;
+        if (stats.deceleration > 0)
+            dec = stats.deceleration;
+        if (stats.rotationSpeed > 0)
+            rot = stats.rotationSpeed;
+
         // Load hitbox from config
         if (stats.hitboxWidth > 0 && stats.hitboxHeight > 0) {
-            hitbox((int)stats.hitboxOffsetX, (int)stats.hitboxOffsetY, stats.hitboxWidth, stats.hitboxHeight);
+            hitbox((int) stats.hitboxOffsetX, (int) stats.hitboxOffsetY, stats.hitboxWidth, stats.hitboxHeight);
         }
-        
+
         // Load targeting weights from config
         if (stats.targetWeights != null && !stats.targetWeights.isEmpty()) {
             weight.putAll(stats.targetWeights);
         }
-        
+
         // Load turrets and weapons
-        if (stats.turrets == null) return;
-        
+        if (stats.turrets == null)
+            return;
+
         for (TurretStats turretStats : stats.turrets) {
             Turret turret = new Turret(this, turretStats.offsetX, turretStats.offsetY, turretStats.rotationSpeed,
                     turretStats.targetInterval, turretStats.targetChance, turretStats.targetCooldown);
             turret.range = turretStats.range;
+            if (turretStats.zIndex > 0) {
+                turret.zIndex = turretStats.zIndex;
+            }
             add(turret);
-            
+
             // Add weapons from config
             if (turretStats.weapons != null) {
                 for (WeaponStats weaponStats : turretStats.weapons) {
@@ -1440,23 +1517,13 @@ abstract class Enemy extends Instance {
 
 class Recon extends Enemy {
     public Recon(int x, int y) {
-        super(x, y, 30);
-        hitbox(0, 0, 0.7, 0.4); // Add hitbox for collision detection
+        super(x, y);
     }
+}
 
-    @Override
-    void setWeight() {
-        weight("headquarter", 50);
-        weight("AutoCannon", 150);
-        weight("powerplant", 100);
-    }
-
-    @Override
-    public void destroy() {
-        alive = false;
-        turrets.clear();
-        GameManager.getInstance().addKromer(5);
-        Gamma.kromer = GameManager.getInstance().getKromer();
+class Kodiak extends Enemy {
+    public Kodiak(int x, int y) {
+        super(x, y);
     }
 }
 
@@ -1471,7 +1538,7 @@ class Turret implements Elements.Renderable {
     int imgX = 0, imgY = 0; // image offset
     double scaleX = 1, scaleY = 1; // image scale
     double facing; // angle relative to parent in radians
-    
+
     String getParent() {
         return parent.getClass().getSimpleName().toLowerCase();
     }
@@ -1506,7 +1573,6 @@ class Turret implements Elements.Renderable {
     }
 
     public Turret(Instance parent, int offsetX, int offsetY, int rot, double interval, double chance, double cooldown) { // for
-                                                                                                                         // enemies
         this.parent = parent;
         this.offsetX = offsetX;
         this.offsetY = offsetY;
@@ -1538,6 +1604,7 @@ class Turret implements Elements.Renderable {
         this.interval = interval;
         this.chance = chance;
         this.cooldown = cooldown;
+        this.cooldownTimer = cooldown;  // Start enemies on cooldown so they don't fire immediately
     }
 
     void update(float deltaTime) {
@@ -1560,6 +1627,7 @@ class Turret implements Elements.Renderable {
                     isTargeting = false;
                     bTarget = null;
                     durationTimer = 0;
+                    cooldownTimer = 0;  // Start cooldown after targeting ends
                 } else {
                     double targetX = bTarget.x * Location.cellSize + Location.cellSize / 2.0;
                     double targetY = bTarget.y * Location.cellSize + Location.cellSize / 2.0;
@@ -1600,9 +1668,7 @@ class Turret implements Elements.Renderable {
                         // Try to find a building cell in range
                         Point target = findBuilding();
                         if (target != null) {
-                            // actually set the cooldown on fire() but for now set it here
                             bTarget = target;
-                            cooldownTimer = 0;
                             isTargeting = true;
                         }
                     }
@@ -1839,8 +1905,12 @@ class Turret implements Elements.Renderable {
         Building bParent = parent instanceof Building ? (Building) parent : null;
         double cos = Math.cos(parent.facing);
         double sin = Math.sin(parent.facing);
-        double rotatedOffsetX = (offsetX + (bParent != null ? (double)bParent.width / 2 * Location.cellSize - Location.cellSize / 2.0 : 0)) * cos - offsetY * sin;
-        double rotatedOffsetY = offsetX * sin + (offsetY + (bParent != null ? (double)bParent.height / 2 * Location.cellSize - Location.cellSize / 2.0 : 0)) * cos;
+        double rotatedOffsetX = (offsetX
+                + (bParent != null ? (double) bParent.width / 2 * Location.cellSize - Location.cellSize / 2.0 : 0))
+                * cos - offsetY * sin;
+        double rotatedOffsetY = offsetX * sin + (offsetY
+                + (bParent != null ? (double) bParent.height / 2 * Location.cellSize - Location.cellSize / 2.0 : 0))
+                * cos;
         exactX = parent.exactX + rotatedOffsetX;
         exactY = parent.exactY + rotatedOffsetY;
 
@@ -1898,15 +1968,16 @@ class Weapon { // Concrete weapon class - can be instantiated directly or subcla
                // All behavior configured via stats (rof, burst, projectileType, etc.)
                // No need for subclasses unless custom projectile creation is needed
     Turret parent;
+    String name = "Weapon"; // Name of the weapon for identification
     int damage = 10;
-    double rof = 1; // seconds between shots
+    double rof = 1; // seconds between bursts (cooldown)
     int pierce = 0;
     BufferedImage projectileImg;
     double pSpeed = 4.0; // cells per second
     int offsetX = 0, offsetY = 0; // offset from turret center in pixels
     double muzzleX = 0, muzzleY = 0; // projectile creation coordinates (use double for precision)
 
-    int burst = 1; // shots per trigger pull, enemies will use burst rather than rof
+    int burst = 1; // shots per burst (default 1 = no burst mechanic)
     double burstDelay = 0.5; // seconds between shots in a burst
     int shot = 0; // shots fired in current burst
     double spread = 0; // degrees of random spread
@@ -1936,459 +2007,257 @@ class Weapon { // Concrete weapon class - can be instantiated directly or subcla
     }
 
     /**
-     * Unified fire logic handling both ROF (rate of fire) and burst mechanics.
+     * Unified fire logic for all weapons.
      * 
-     * Behavior:
-     * - If burst > 1: Uses burst mode (for enemies mainly)
-     *   - Fire once every burstDelay seconds
-     *   - Can fire up to 'burst' times per trigger
-     *   - After exhausting burst, cannot fire until cooldown expires
-     * - If burst == 1: Uses ROF mode (for buildings mainly)
-     *   - Fire once every rof seconds
-     *   - No burst concept
+     * The weapon timing model works as follows:
+     * - rof (rate of fire): Cooldown between starting new bursts (in seconds)
+     * - burst: Number of shots to fire per burst (default 1)
+     * - burstDelay: Interval between individual shots within a burst (in seconds)
      * 
-     * @param angle The angle to fire at
+     * Firing sequence:
+     * 1. Wait for rofTimer >= rof (ready for new burst)
+     * 2. Fire shots at burstDelay intervals (up to 'burst' shots)
+     * 3. After burst exhausted, wait for next rof cooldown
+     * 4. Repeat
+     * 
+     * Example 1 (ROF-based weapon, buildings):
+     * rof=1.0, burst=1, burstDelay=0 → fires once every 1 second
+     * 
+     * Example 2 (Burst-based weapon, enemies):
+     * rof=3.0, burst=5, burstDelay=0.2 → fires 5 shots (0.2s apart), then waits 3
+     * seconds
+     * 
+     * @param angle  The angle to fire at
      * @param target The target instance (for predictive weapons)
      */
     void fire(double angle, Instance target) {
         boolean shouldFire = false;
-        
-        if (burst > 1) {
-            // Burst mode: fire multiple shots with delay between them
-            if (shot < burst) {
-                // Still have shots in current burst
-                if (burstTimer > burstDelay / parent.parent.rofMult) {
-                    shouldFire = true;
-                    shot++;
-                    burstTimer = 0;
-                }
-            }
-            // else: burst exhausted, cannot fire until turret calls resetBurst()
-        } else {
-            // ROF mode: fire once when timer exceeds rof
-            if (rofTimer > rof / parent.parent.rofMult) {
-                shouldFire = true;
-                rofTimer = 0;
-            }
+
+        // Check if we're ready to fire (either starting fresh or continuing a burst)
+        if (shot == 0 && rofTimer >= rof / parent.parent.rofMult) {
+            // Starting a new burst - reset the burst timer
+            shouldFire = true;
+            shot = 1;
+            burstTimer = 0;
+            rofTimer = 0;
+        } else if (shot > 0 && shot < burst && burstTimer >= burstDelay / parent.parent.rofMult) {
+            // Continuing within a burst - fire next shot
+            shouldFire = true;
+            shot++;
+            burstTimer = 0;
+        } else if (shot >= burst && rofTimer >= rof / parent.parent.rofMult) {
+            // Burst exhausted, ready for next burst
+            shouldFire = true;
+            shot = 1;
+            burstTimer = 0;
+            rofTimer = 0;
         }
-        
+
         if (shouldFire) {
             createProjectile(angle, target);
         }
     }
-    
+
     /**
-     * Create a projectile based on the configured projectileType.
-     * This method can be overridden in subclasses for custom behavior.
+     * Create a projectile of the configured type.
+     * The unified Projectile class handles all projectile behaviors (bullet, shell,
+     * cannonshell, etc.)
+     * via config-driven settings instead of multiple subclasses.
+     * 
+     * @param angle  The angle to fire at (passed but not used - Projectile uses
+     *               weapon facing)
+     * @param target The target instance (used for targeting projectiles like
+     *               shells)
      */
     protected void createProjectile(double angle, Instance target) {
-        if ("heshell".equalsIgnoreCase(projectileType) || "shell".equalsIgnoreCase(projectileType)) {
-            Gamma.add(new HEShell("heshell", 0.2, 0.2, this, target));
-        } else if ("bullet".equalsIgnoreCase(projectileType)) {
-            // Use small bullet for low damage, regular bullet for high damage
-            if (damage < 5) {
-                Gamma.add(new Bullet("small_bullet", 0.15, 0.15, this));
-            } else {
-                Gamma.add(new Bullet("bullet", 0.2, 0.2, this));
-            }
-        } else {
-            // Default to bullet if type not recognized
-            Gamma.add(new Bullet("bullet", 0.2, 0.2, this));
+        // Determine if this projectile type uses targeting (predictive aiming)
+        boolean isTargeting = isTargetingProjectile(projectileType);
+
+        // Create the unified projectile with config-driven behavior
+        Projectile projectile = new Projectile(projectileType, this, isTargeting);
+
+        // If the projectile needs a target, set it for prediction calculation
+        if (isTargeting && target != null) {
+            projectile.setTarget(target);
         }
+
+        Gamma.add(projectile);
+    }
+
+    /**
+     * Check if a projectile type should use targeting (predictive aiming).
+     * Targeting projectiles calculate travel distance to predicted enemy position.
+     */
+    private boolean isTargetingProjectile(String type) {
+        if (type == null)
+            return false;
+        String lower = type.toLowerCase();
+        return lower.equals("shell") || lower.equals("heshell");
+    }
+
+    /**
+     * Factory method to create a weapon from a WeaponDefinition and muzzle offset.
+     * This allows weapons to be defined in weapons.json and instantiated with
+     * custom offsets per turret.
+     */
+    public static Weapon fromDefinition(Turret parent, WeaponDefinition def, int offsetX, int offsetY) {
+        Weapon weapon = new Weapon(parent, offsetX, offsetY);
+        weapon.name = def.name;
+        weapon.damage = def.damage;
+        weapon.rof = def.rof;
+        weapon.pSpeed = def.projectileSpeed;
+        weapon.projectileType = def.projectileType;
+        weapon.pierce = def.pierce;
+        weapon.burst = def.burst;
+        weapon.burstDelay = def.burstDelay;
+        weapon.spread = def.spread;
+        return weapon;
     }
 }
 
-// Legacy weapon classes - kept for compatibility but no longer used
-// These can be removed once all configs have been migrated to use the concrete Weapon class
-// Note: Since Weapon is now concrete with unified fire() logic, these subclasses are deprecated.
-// Kept here only for reference or if custom createProjectile() behavior is needed.
-// All new weapons should use config-driven Weapon instantiation via createWeaponFromStats()
-// ---------------------------------------------------------------------------------------------
-class AutoCannonW extends Weapon {
-    public AutoCannonW(Turret parent, int offsetX, int offsetY) {
-        super(parent, offsetX, offsetY);
-        damage = 5;
-        parent.range = 4;
-        rof = 0.3;
-        pSpeed = 10;
-        spread = 5;
-        projectileType = "bullet";
-    }
-
-    @Override
-    void fire(double angle, Instance target) {
-        if (rofTimer > rof / parent.parent.rofMult) {
-            Gamma.add(new Bullet("bullet", 0.2, 0.2, this));
-            rofTimer = 0;
-        }
-    }
-}
-
-class ArtilleryW extends Weapon {
-    public ArtilleryW(Turret parent, int offsetX, int offsetY) {
-        super(parent, offsetX, offsetY);
-        damage = 75;
-        parent.range = 14;
-        rof = 5;
-        pSpeed = 6;
-        spread = 0;
-        projectileType = "heshell";
-    }
-
-    @Override
-    void fire(double angle, Instance target) {
-        if (rofTimer > rof / parent.parent.rofMult) {
-            Gamma.add(new HEShell("heshell", 0.2, 0.2, this, target));
-            rofTimer = 0;
-        }
-    }
-}
+// Legacy weapon classes - REMOVED - use config-driven Weapon instantiation
+// instead
+// All weapons are now created via createWeaponFromStats() with config-based
+// stats
+// No need for hardcoded weapon subclasses anymore
 
 // ENEMY WEAPONS
-// This is now handled by GenericWeapon, but kept for compatibility
-// ---------------------------------------------------------------------------------------------
-class MG extends Weapon {
-    public MG(Turret parent, int muzzleX, int muzzleY) {
-        super(parent, muzzleX, muzzleY);
-        damage = 2;
-        parent.range = 4;
-        burst = 5;
-        burstDelay = 0.4;
-        pSpeed = 5.0;
-        spread = 5;
-        projectileType = "bullet";
-    }
 
-    @Override
-    void fire(double angle, Instance target) {
-        if (shot < burst && burstTimer > burstDelay / parent.parent.rofMult) {
-            Gamma.add(new Bullet("small_bullet", .15, .15, this));
-            shot++;
-            burstTimer = 0;
-        }
-    }
-}
-
-// new weapon
-
-abstract class Projectile extends Instance {
+/**
+ * Unified Projectile class - handles all projectile types via config-driven
+ * behavior.
+ * Replaces multiple subclasses (Bullet, HEShell, CannonShell) with a single
+ * implementation.
+ * 
+ * Behavior is determined by:
+ * - projectileType: determines hitbox size, image, collision behavior,
+ * explosion
+ * - isTargeting: if true, uses predictive targeting; if false, ballistic
+ * movement
+ */
+class Projectile extends Instance {
     Instance iParent; // the instance that fired this projectile
     Weapon parent;
+    String projectileType; // "bullet", "shell", "cannonshell", etc.
     String imgName;
     int zIndex = 15;
-    ArrayList<Instance> hit = new ArrayList<>(); // store hit instances to avoid hitting the same instance multiple times
+    ArrayList<Instance> hit = new ArrayList<>();
 
     double speed = 5.0; // cells per second
-    boolean affectAllies = false;
-    boolean affectEnemies = true;
-    double acc = 0.1; // acceleration in cells per second squared
-    double dec = 0.1; // deceleration in cells per second squared
+    double acceleration = 0.0; // for accelerate movement type
+    double deceleration = 0.0; // for decelerate movement type
 
-    public Projectile(String name, double hitboxW, double hitboxH, Weapon parent) {
-        super(0, 0); // doesn't matter, we only need the exact one
-        this.parent = parent;
-        this.iParent = parent.parent.parent; // what the fuck lmfao
-        this.exactX = parent.muzzleX;
-        this.exactY = parent.muzzleY;
-        this.facing = parent.parent.facing + Math.toRadians((Math.random() - 0.5) * parent.spread);
-        this.speed = parent.pSpeed;
-        hitbox(0, 0, hitboxW, hitboxH); // Add hitbox for projectile
-        this.imgName = name;
-    }
+    // Collision and damage configuration
+    int damage;
+    int pierce;
+    String collisionExclude; // "allies projectile" etc.
 
-    public void render(Graphics2D g) {
-        if (image == null) {
-            image = Utilities.load(imgName, scaleX, scaleY);
-        }
-
-        if (image != null) {
-            // Save the current graphics state
-            Graphics2D g2 = (Graphics2D) g.create();
-
-            int drawX = (int) exactX - (image.getWidth() / 2);
-            int drawY = (int) exactY - (image.getHeight() / 2);
-            g2.rotate(facing, drawX + (image.getWidth() / 2), drawY + (image.getHeight() / 2));
-            g2.drawImage(image, drawX, drawY, null);
-
-            // Dispose of the graphics copy to restore original state
-            g2.dispose();
-        }
-    }
-
-    /**
-     * Check if this projectile should be destroyed (out of bounds or pierce exhausted).
-     * Also handles linger check timer updates.
-     */
-    public void destroy() {
-        double radius;
-        if (image != null) {
-            int imgW = image.getWidth();
-            int imgH = image.getHeight();
-            radius = 0.5 * Math.sqrt(imgW * imgW + imgH * imgH);
-        } else {
-            radius = 100;
-        }
-        if (exactX + radius < 0 || exactX - radius > Gamma.GAME_WIDTH ||
-                exactY + radius < 0 || exactY - radius > Gamma.HEIGHT) {
-            alive = false;
-        }
-        if (hit.size() > parent.pierce)
-            alive = false; // exceeded pierce limit
-    }
-
-    /**
-     * Unified collision detection using SAT algorithm.
-     * Only checks instances not already hit (for collision check type).
-     * Returns first instance that collides.
-     */
-    Instance collision(String exclude) {
-        // Parse exclusion list
-        String[] excludedTypes = (exclude != null && !exclude.trim().isEmpty()) ? exclude.trim().split("\\s+")
-                : new String[0];
-
-        for (Instance instance : Gamma.getInstances()) {
-            if (instance == iParent || hit.contains(instance))
-                continue;
-
-            String instanceType = instance.getClass().getSimpleName().toLowerCase();
-            String superType;
-            if (instance instanceof Building)
-                superType = "building";
-            else if (instance instanceof Enemy)
-                superType = "enemy";
-            else if (instance instanceof Projectile)
-                superType = "projectile";
-            else
-                superType = "";
-
-            boolean shouldExclude = false;
-            for (String excludedType : excludedTypes) {
-                String excluded = excludedType.toLowerCase();
-                // if allies, check if same superclass (Enemy or Building)
-                if (excluded.equals("allies")) {
-                    if (iParent instanceof Enemy && superType == "enemy") {
-                        shouldExclude = true;
-                        break;
-                    }
-                    if (iParent instanceof Building && superType == "building") {
-                        shouldExclude = true;
-                        break;
-                    }
-                }
-                if (instanceType.equals(excluded) || (!superType.isEmpty() && superType.equals(excluded))) {
-                    shouldExclude = true;
-                    break;
-                }
-            }
-            if (shouldExclude)
-                continue;
-
-            for (Hitbox ourHitbox : hitboxes) {
-                for (Hitbox theirHitbox : instance.hitboxes) {
-                    boolean collision = true;
-
-                    ArrayList<Point> allAxes = new ArrayList<>();
-
-                    for (int i = 0; i < 4; i++) {
-                        Point current = ourHitbox.corners.get(i);
-                        Point next = ourHitbox.corners.get((i + 1) % 4);
-
-                        int edgeX = next.x - current.x;
-                        int edgeY = next.y - current.y;
-
-                        Point axis = new Point(-edgeY, edgeX);
-
-                        double length = Math.sqrt(axis.x * axis.x + axis.y * axis.y);
-                        if (length > 0) {
-                            axis.x = (int) (axis.x / length * 1000); // Scale up to avoid precision loss
-                            axis.y = (int) (axis.y / length * 1000);
-                        }
-
-                        allAxes.add(axis);
-                    }
-
-                    for (int i = 0; i < 4; i++) {
-                        Point current = theirHitbox.corners.get(i);
-                        Point next = theirHitbox.corners.get((i + 1) % 4);
-
-                        int edgeX = next.x - current.x;
-                        int edgeY = next.y - current.y;
-
-                        Point axis = new Point(-edgeY, edgeX);
-
-                        double length = Math.sqrt(axis.x * axis.x + axis.y * axis.y);
-                        if (length > 0) {
-                            axis.x = (int) (axis.x / length * 1000); // Scale up to avoid precision loss
-                            axis.y = (int) (axis.y / length * 1000);
-                        }
-
-                        allAxes.add(axis);
-                    }
-
-                    for (Point axis : allAxes) {
-                        double ourMin = Double.MAX_VALUE;
-                        double ourMax = Double.MIN_VALUE;
-
-                        for (Point corner : ourHitbox.corners) {
-                            double projection = (corner.x * axis.x + corner.y * axis.y) / 1000.0; // Scale back down
-
-                            if (projection < ourMin)
-                                ourMin = projection;
-                            if (projection > ourMax)
-                                ourMax = projection;
-                        }
-
-                        double theirMin = Double.MAX_VALUE;
-                        double theirMax = Double.MIN_VALUE;
-
-                        for (Point corner : theirHitbox.corners) {
-                            double projection = (corner.x * axis.x + corner.y * axis.y) / 1000.0; // Scale back down
-
-                            if (projection < theirMin)
-                                theirMin = projection;
-                            if (projection > theirMax)
-                                theirMax = projection;
-                        }
-
-                        if (ourMax < theirMin || theirMax < ourMin) {
-                            collision = false;
-                            break; // Separating axis found, no collision
-                        }
-                    }
-                    if (collision) {
-                        hit.add(instance);
-                        return instance; // Hit detected, return the hit instance
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Apply damage to a target instance.
-     */
-    void damage(Instance target, int damage) {
-        target.health -= (int) (damage * iParent.damageMult);
-        if (target.health <= 0) {
-            target.destroy();
-        }
-    }
-
-    // movement type
-    void simple(float deltaTime) {
-        double moveDistance = speed * Location.cellSize * deltaTime;
-        exactX += Math.cos(facing) * moveDistance;
-        exactY += Math.sin(facing) * moveDistance;
-        destroy();
-    }
-
-    void accelerate(float deltaTime) {
-        double moveDistance = speed * Location.cellSize * deltaTime;
-        speed += acc * deltaTime;
-        exactX += Math.cos(facing) * moveDistance;
-        exactY += Math.sin(facing) * moveDistance;
-        destroy();
-    }
-
-    void decelerate(float deltaTime) {
-        double moveDistance = speed * Location.cellSize * deltaTime;
-        speed -= dec * deltaTime;
-        if (speed < 0)
-            speed = 0;
-        exactX += Math.cos(facing) * moveDistance;
-        exactY += Math.sin(facing) * moveDistance;
-        destroy();
-    }
-    
-    /**
-     * Trigger area damage explosion.
-     * Creates visual effect and damages all non-allies within radius.
-     */
-    void explode(double radius) {
-        Empty explosionHolder = new Empty();
-        explosionHolder.exactX = this.exactX;
-        explosionHolder.exactY = this.exactY;
-        Gamma.add(explosionHolder);
-        Utilities.animLoad("explode", (int) exactX, (int) exactY, 1, 1, explosionHolder, false);
-        
-        // Deal area damage to enemies within radius
-        double explosionRadius = radius * Location.cellSize;
-        for (Instance instance : Gamma.getInstances()) {
-            if (instance == iParent)
-                continue;
-
-            String superType;
-            if (instance instanceof Building)
-                superType = "building";
-            else if (instance instanceof Enemy)
-                superType = "enemy";
-            else
-                superType = "";
-
-            boolean isAlly = false;
-            if (iParent instanceof Enemy && superType == "enemy") {
-                isAlly = true;
-            }
-            if (iParent instanceof Building && superType == "building") {
-                isAlly = true;
-            }
-            if (isAlly)
-                continue;
-
-            double distance = Math.hypot(instance.exactX - exactX, instance.exactY - exactY);
-            if (distance <= explosionRadius) {
-                damage(instance, parent.damage);
-            }
-        }
-        alive = false; // destroy the projectile after exploding
-    }
-}
-
-class Bullet extends Projectile {
-
-    public Bullet(String name, double hitboxW, double hitboxH, Weapon parent) {
-        super(name, hitboxW, hitboxH, parent);
-    }
-
-    @Override
-    void update(float deltaTime) {
-        if (!alive)
-            return;
-        simple(deltaTime);
-        Instance target = collision("allies projectile");
-        if (target != null) {
-            damage(target, parent.damage);
-        }
-    }
-}
-
-class HEShell extends Projectile {
+    // Targeting (for projectiles that need to lead targets)
+    boolean isTargeting = false;
     double targetX, targetY;
     double travelDistance;
     double distanceTraveled = 0;
-    
-    public HEShell(String name, double hitboxW, double hitboxH, Weapon parent, Instance target) {
-        super(name, hitboxW, hitboxH, parent);
-        
-        // facing is already set by Projectile constructor from parent.parent.facing
-        
+
+    // Area damage configuration
+    boolean hasExplosion = false;
+    double explosionRadius = 1.0;
+
+    /**
+     * Create a projectile of the specified type.
+     * 
+     * @param projectileType The type of projectile ("bullet", "shell",
+     *                       "cannonshell", etc.)
+     * @param parent         The weapon that fired this projectile
+     * @param isTargeting    If true, this projectile will use predictive targeting
+     *                       behavior
+     */
+    public Projectile(String projectileType, Weapon parent, boolean isTargeting) {
+        super(parent.muzzleX, parent.muzzleY);
+        this.projectileType = projectileType;
+        this.parent = parent;
+        this.iParent = parent.parent.parent;
+        this.isTargeting = isTargeting;
+        this.facing = parent.parent.facing + Math.toRadians((Math.random() - 0.5) * parent.spread);
+        this.speed = parent.pSpeed;
+        this.damage = parent.damage;
+        this.pierce = parent.pierce;
+        this.hit = new ArrayList<>();
+
+        // Load projectile-specific configuration
+        loadProjectileConfig(projectileType);
+    }
+
+    /**
+     * Load projectile behavior from centralized config.
+     * Replaces the old system of multiple subclasses each defining their own
+     * behavior.
+     */
+    private void loadProjectileConfig(String type) {
+        String lower = (type != null ? type.toLowerCase() : "bullet");
+
+        switch (lower) {
+            case "bullet":
+                collisionExclude = "allies projectile";
+                hasExplosion = false;
+                hitbox(0, 0, 0.2, 0.2);
+                imgName = "bullet";
+                break;
+
+            case "small_bullet":
+                collisionExclude = "allies projectile";
+                hasExplosion = false;
+                hitbox(0, 0, 0.1, 0.1);
+                imgName = "small_bullet";
+                break;
+            case "heshell":
+                collisionExclude = "allies projectile";
+                hasExplosion = true;
+                explosionRadius = 1.5;
+                hitbox(0, 0, 0.3, 0.3);
+                imgName = "heshell";
+                break;
+
+            case "cannonshell":
+                collisionExclude = "allies projectile";
+                hasExplosion = true;
+                explosionRadius = 1.0;
+                hitbox(0, 0, 0.3, 0.3);
+                imgName = "cannonshell";
+                break;
+
+            default:
+                // Fallback to bullet behavior
+                collisionExclude = "allies projectile";
+                hasExplosion = false;
+                hitbox(0, 0, 0.2, 0.2);
+                imgName = "bullet";
+        }
+    }
+
+    /**
+     * Set targeting information for this projectile.
+     * Used by targeting projectiles (shell/heshell) to calculate travel distance.
+     * For ballistic projectiles, this is not called.
+     */
+    public void setTarget(Instance target) {
+        if (target == null)
+            return;
+
+        // Calculate predicted target position
         if (target instanceof Enemy) {
             Point predicted = parent.parent.predict((Enemy) target);
             if (predicted != null) {
                 this.targetX = predicted.x;
                 this.targetY = predicted.y;
             } else {
-                // Fallback to current position if prediction fails
                 this.targetX = target.exactX;
                 this.targetY = target.exactY;
             }
         } else {
-            // For non-enemy targets, use exact position
             this.targetX = target.exactX;
             this.targetY = target.exactY;
         }
-        
+
         // Calculate travel distance to predicted position
         double dx = targetX - exactX;
         double dy = targetY - exactY;
@@ -2399,13 +2268,273 @@ class HEShell extends Projectile {
     void update(float deltaTime) {
         if (!alive)
             return;
-        simple(deltaTime);
-        distanceTraveled += speed * Location.cellSize * deltaTime;
 
-        // Explode when traveled far enough to reach the predicted target position
-        if (distanceTraveled >= travelDistance) {
-            explode(1.5);
+        // Update movement
+        updateMovement(deltaTime);
+
+        // Check if targeting projectile should explode
+        if (isTargeting && distanceTraveled >= travelDistance) {
+            triggerExplosion();
             return;
+        }
+
+        // Check collision for non-targeting projectiles
+        if (!isTargeting) {
+            Instance target = checkCollision();
+            if (target != null) {
+                dealDamage(target, damage);
+                if (hasExplosion) {
+                    triggerExplosion();
+                } else {
+                    alive = false;
+                }
+                return;
+            }
+        }
+
+        // Check bounds
+        checkBounds();
+    }
+
+    /**
+     * Update projectile position based on movement type.
+     */
+    private void updateMovement(float deltaTime) {
+        double moveDistance = speed * Location.cellSize * deltaTime;
+
+        // For targeting projectiles, track distance traveled
+        if (isTargeting) {
+            distanceTraveled += speed * Location.cellSize * deltaTime;
+        }
+
+        // Update position
+        exactX += Math.cos(facing) * moveDistance;
+        exactY += Math.sin(facing) * moveDistance;
+
+        // Handle acceleration/deceleration if configured
+        if (acceleration > 0) {
+            speed += acceleration * deltaTime;
+        } else if (deceleration > 0) {
+            speed -= deceleration * deltaTime;
+            if (speed < 0)
+                speed = 0;
+        }
+    }
+
+    /**
+     * Check collision with other instances using SAT algorithm.
+     * Returns the first instance that collides (respecting exclusion list).
+     */
+    private Instance checkCollision() {
+        String[] excludedTypes = (collisionExclude != null && !collisionExclude.trim().isEmpty())
+                ? collisionExclude.trim().split("\\s+")
+                : new String[0];
+
+        for (Instance instance : Gamma.getInstances()) {
+            if (instance == iParent || hit.contains(instance))
+                continue;
+
+            String instanceType = instance.getClass().getSimpleName().toLowerCase();
+            String superType = getSuperType(instance);
+
+            if (shouldExcludeTarget(instanceType, superType, excludedTypes))
+                continue;
+
+            if (collidesWithInstance(instance)) {
+                hit.add(instance);
+                return instance;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get the super type category of an instance.
+     */
+    private String getSuperType(Instance instance) {
+        if (instance instanceof Building)
+            return "building";
+        if (instance instanceof Enemy)
+            return "enemy";
+        if (instance instanceof Projectile)
+            return "projectile";
+        return "";
+    }
+
+    /**
+     * Check if target should be excluded from collision.
+     */
+    private boolean shouldExcludeTarget(String instanceType, String superType, String[] excludedTypes) {
+        for (String excluded : excludedTypes) {
+            String excludedLower = excluded.toLowerCase();
+
+            // Handle "allies" exclusion: exclude same faction
+            if (excludedLower.equals("allies")) {
+                if (iParent instanceof Enemy && superType.equals("enemy"))
+                    return true;
+                if (iParent instanceof Building && superType.equals("building"))
+                    return true;
+            }
+
+            // Handle specific type exclusion
+            if (instanceType.equals(excludedLower) || (!superType.isEmpty() && superType.equals(excludedLower))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if this projectile collides with another instance using SAT.
+     */
+    private boolean collidesWithInstance(Instance instance) {
+        for (Hitbox ourHitbox : hitboxes) {
+            for (Hitbox theirHitbox : instance.hitboxes) {
+                if (satCollision(ourHitbox, theirHitbox)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * SAT collision detection between two hitboxes.
+     */
+    private boolean satCollision(Hitbox ourHitbox, Hitbox theirHitbox) {
+        ArrayList<Point> allAxes = new ArrayList<>();
+
+        // Generate axes from our hitbox
+        for (int i = 0; i < 4; i++) {
+            Point current = ourHitbox.corners.get(i);
+            Point next = ourHitbox.corners.get((i + 1) % 4);
+            allAxes.add(normalizeAxis(new Point(-(next.y - current.y), next.x - current.x)));
+        }
+
+        // Generate axes from their hitbox
+        for (int i = 0; i < 4; i++) {
+            Point current = theirHitbox.corners.get(i);
+            Point next = theirHitbox.corners.get((i + 1) % 4);
+            allAxes.add(normalizeAxis(new Point(-(next.y - current.y), next.x - current.x)));
+        }
+
+        // Test all axes for separation
+        for (Point axis : allAxes) {
+            double ourMin = Double.MAX_VALUE, ourMax = Double.MIN_VALUE;
+            double theirMin = Double.MAX_VALUE, theirMax = Double.MIN_VALUE;
+
+            for (Point corner : ourHitbox.corners) {
+                double projection = (corner.x * axis.x + corner.y * axis.y) / 1000.0;
+                ourMin = Math.min(ourMin, projection);
+                ourMax = Math.max(ourMax, projection);
+            }
+
+            for (Point corner : theirHitbox.corners) {
+                double projection = (corner.x * axis.x + corner.y * axis.y) / 1000.0;
+                theirMin = Math.min(theirMin, projection);
+                theirMax = Math.max(theirMax, projection);
+            }
+
+            if (ourMax < theirMin || theirMax < ourMin) {
+                return false; // Separating axis found - no collision
+            }
+        }
+        return true; // All axes overlap - collision detected
+    }
+
+    /**
+     * Normalize an axis for SAT collision (scale up to avoid precision loss).
+     */
+    private Point normalizeAxis(Point axis) {
+        double length = Math.sqrt(axis.x * axis.x + axis.y * axis.y);
+        if (length > 0) {
+            axis.x = (int) (axis.x / length * 1000);
+            axis.y = (int) (axis.y / length * 1000);
+        }
+        return axis;
+    }
+
+    /**
+     * Apply damage to a target.
+     */
+    private void dealDamage(Instance target, int damage) {
+        target.health -= (int) (damage * iParent.damageMult);
+        if (target.health <= 0) {
+            target.destroy();
+        }
+    }
+
+    /**
+     * Trigger area damage explosion.
+     * Creates visual effect and damages all non-allied instances within radius.
+     */
+    private void triggerExplosion() {
+        // Create visual effect
+        Empty explosionHolder = new Empty();
+        explosionHolder.exactX = this.exactX;
+        explosionHolder.exactY = this.exactY;
+        Gamma.add(explosionHolder);
+        Utilities.animLoad("explode", (int) exactX, (int) exactY,
+                explosionRadius / 1.5, explosionRadius / 1.5, explosionHolder, false);
+
+        // Deal area damage
+        double explosionRadiusPx = explosionRadius * Location.cellSize;
+        for (Instance instance : Gamma.getInstances()) {
+            if (instance == iParent)
+                continue;
+
+            String superType = getSuperType(instance);
+            boolean isAlly = (iParent instanceof Enemy && superType.equals("enemy")) ||
+                    (iParent instanceof Building && superType.equals("building"));
+            if (isAlly)
+                continue;
+
+            double distance = Math.hypot(instance.exactX - exactX, instance.exactY - exactY);
+            if (distance <= explosionRadiusPx) {
+                dealDamage(instance, damage);
+            }
+        }
+
+        alive = false;
+    }
+
+    /**
+     * Check if projectile is out of bounds or exceeded pierce limit.
+     */
+    private void checkBounds() {
+        double radius = 100;
+        if (image != null) {
+            int imgW = image.getWidth();
+            int imgH = image.getHeight();
+            radius = 0.5 * Math.sqrt(imgW * imgW + imgH * imgH);
+        }
+        if (exactX + radius < 0 || exactX - radius > Gamma.GAME_WIDTH ||
+                exactY + radius < 0 || exactY - radius > Gamma.HEIGHT) {
+            alive = false;
+        }
+        if (hit.size() > pierce) {
+            alive = false;
+        }
+    }
+
+    @Override
+    public void destroy() {
+        // Projectiles are destroyed via setting alive = false in checkBounds()
+        // This override is required by Instance abstract class
+    }
+
+    @Override
+    public void render(Graphics2D g) {
+        if (image == null) {
+            image = Utilities.load(imgName, scaleX, scaleY);
+        }
+        if (image != null) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            int drawX = (int) exactX - (image.getWidth() / 2);
+            int drawY = (int) exactY - (image.getHeight() / 2);
+            g2.rotate(facing, drawX + (image.getWidth() / 2), drawY + (image.getHeight() / 2));
+            g2.drawImage(image, drawX, drawY, null);
+            g2.dispose();
         }
     }
 }
@@ -2629,26 +2758,39 @@ class WaveManager {
     }
 
     private static void letTheFunBegins() {
-        // format: addWave(waveNumber, w(EnemyClass.class, count, spawnInterval, delay), ...);
+        // format: addWave(waveNumber, w(EnemyClass.class, count, spawnInterval, delay),
+        // ...);
         addWave(1,
-                w(Recon.class, 5, 2.0, 0.0));
+                w(Recon.class, 5, 2.0, 0.0)
+                );
 
         addWave(2,
-                w(Recon.class, 5, 1.5, 0.0),
-                w(Recon.class, 3, 2.0, 0.0));
+                w(Recon.class, 5, 2.0, 0.0),
+                w(Recon.class, 5, 1.5, 15.0)
+                );
 
         addWave(3,
                 w(Recon.class, 4, 1.0, 0.0),
                 w(Recon.class, 4, 1.0, 5.0),
-                w(Recon.class, 4, 1.0, 10.0));
+                w(Recon.class, 4, 1.0, 10.0)
+                );
 
         addWave(4,
                 w(Recon.class, 8, 1.0, 0.0),
-                w(Recon.class, 8, 1.2, 0.0));
+                w(Recon.class, 8, 1.2, 0.0)
+                );
 
         addWave(5,
                 w(Recon.class, 3, 3.0, 0.0),
-                w(Recon.class, 10, 0.5, 5.0),
-                w(Recon.class, 5, 1.0, 15.0));
+                w(Recon.class, 10, 0.5, 10.0),
+                w(Recon.class, 10, 1.0, 20.0));
+        addWave(6,
+                w(Recon.class, 5, 1.0, 0.0),
+                w(Recon.class, 5, 1.0, 10.0),
+                w(Recon.class, 5, 1.0, 20.0),
+                w(Kodiak.class, 1, 1.0, 40.0),
+                w(Recon.class, 10, 0.7, 55.0),
+                w(Recon.class, 10, 0.7, 70.0)
+                );
     }
 }

@@ -8,6 +8,7 @@
     "deceleration": 1,
     "rotationSpeed": 180,
     "kromerReward": 10,
+    "zIndex": 1,
     "description": "Scout unit. Fast and lightly armored.",
     "imageName": "recon",
     "hitbox": {
@@ -22,28 +23,155 @@
         "offsetY": 0,
         "rotationSpeed": 120,
         "range": 4,
-        "targetInterval": 1,
-        "targetChance": 0.3,
+        "targetInterval": 2,
+        "targetChance": 0.2,
         "targetCooldown": 7,
+        "zIndex": 2,
         "weapons": [
           {
             "name": "MG",
-            "damage": 2,
-            "rof": 0.4,
-            "projectileSpeed": 5,
             "offsetX": 4,
-            "offsetY": 0,
-            "projectileType": "bullet",
-            "pierce": 0,
-            "burst": 5,
-            "burstDelay": 0.4,
-            "spread": 5
+            "offsetY": 0
           }
         ]
       }
     ],
     "targetWeights": {
       "Headquarter": 50,
+      "AutoCannon": 150,
+      "PowerPlant": 100
+    }
+  },
+  {
+    "name": "Kodiak",
+    "health": 10000,
+    "maxSpeed": 0.4,
+    "minSpeed": 0.4,
+    "acceleration": 1,
+    "deceleration": 1,
+    "rotationSpeed": 5,
+    "kromerReward": 10000,
+    "zIndex": 100,
+    "description": "How did it become like this?",
+    "imageName": "kodiak",
+    "hitbox": {
+      "offsetX": 5,
+      "offsetY": 0,
+      "width": 6,
+      "height": 2
+    },
+    "turrets": [
+      {
+        "offsetX": 120,
+        "offsetY": 40,
+        "rotationSpeed": 30,
+        "range": 10,
+        "targetInterval": 1.5,
+        "targetChance": 0.2,
+        "targetCooldown": 10,
+        "zIndex": 99,
+        "weapons": [
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": -10
+          },
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": 0
+          },
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": 10
+          }
+        ]
+      },
+      {
+        "offsetX": 120,
+        "offsetY": -40,
+        "rotationSpeed": 30,
+        "range": 10,
+        "targetInterval": 1.5,
+        "targetChance": 0.2,
+        "targetCooldown": 10,
+        "zIndex": 99,
+        "weapons": [
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": -10
+          },
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": 0
+          },
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": 10
+          }
+        ]
+      },
+      {
+        "offsetX": -25,
+        "offsetY": 40,
+        "rotationSpeed": 30,
+        "range": 10,
+        "targetInterval": 1.5,
+        "targetChance": 0.2,
+        "targetCooldown": 10,
+        "zIndex": 99,
+        "weapons": [
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": -10
+          },
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": 0
+          },
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": 10
+          }
+        ]
+      },
+      {
+        "offsetX": -25,
+        "offsetY": -40,
+        "rotationSpeed": 30,
+        "range": 10,
+        "targetInterval": 1.5,
+        "targetChance": 0.2,
+        "targetCooldown": 10,
+        "zIndex": 99,
+        "weapons": [
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": -10
+          },
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": 0
+          },
+          {
+            "name": "Cannon",
+            "offsetX": 40,
+            "offsetY": 10
+          }
+        ]
+      }
+    ],
+    "targetWeights": {
+      "Headquarter": 300,
       "AutoCannon": 150,
       "PowerPlant": 100
     }

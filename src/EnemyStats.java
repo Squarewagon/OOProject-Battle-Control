@@ -30,6 +30,9 @@ public class EnemyStats {
     // Combat
     public List<TurretStats> turrets;   // turrets this enemy has
     
+    // Rendering
+    public int zIndex = 3;              // rendering layer (default: higher than buildings)
+    
     // Rewards
     public int kromerReward;            // kromer given when killed
     
