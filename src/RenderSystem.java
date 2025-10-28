@@ -44,14 +44,20 @@ public class RenderSystem {
         // Enable anti-aliasing for smoother graphics
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         
-        // Menus vs. Game (treat PAUSED separately)
-        if (gamma.currentState != Gamma.GameState.IN_GAME && gamma.currentState != Gamma.GameState.PAUSED) {
+        // Menus vs. Game (treat PAUSED and GAME_OVER separately)
+        if (gamma.currentState != Gamma.GameState.IN_GAME && gamma.currentState != Gamma.GameState.PAUSED 
+            && gamma.currentState != Gamma.GameState.GAME_OVER) {
             renderMenus(g2d);
             return;
         }
         
         if (gamma.currentState == Gamma.GameState.PAUSED) {
             renderPausedGame(g2d);
+            return;
+        }
+        
+        if (gamma.currentState == Gamma.GameState.GAME_OVER) {
+            renderGameOver(g2d);
             return;
         }
         
@@ -286,6 +292,66 @@ public class RenderSystem {
                 gamma.m1 = false;
             } else if (quitRect.contains(gamma.mx, gamma.my)) {
                 System.exit(0);
+            }
+        }
+    }
+    
+    // ========== GAME OVER RENDERING ==========
+    
+    private void renderGameOver(Graphics2D g2d) {
+        // Draw frozen game underneath
+        renderGameArea(g2d);
+        renderBuildMode(g2d);
+        renderUIPanel(g2d);
+        
+        // Dim overlay
+        Composite orig = g2d.getComposite();
+        g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.6f));
+        g2d.setColor(Color.BLACK);
+        g2d.fillRect(0, 0, 1920, 1080);
+        g2d.setComposite(orig);
+        
+        // Optional background image centered at 960, 540
+        BufferedImage pauseImg = Utilities.load("pause_ui", 1.0, 1.0);
+        if (pauseImg != null) {
+            g2d.drawImage(pauseImg, 960 - pauseImg.getWidth() / 2, 540 - pauseImg.getHeight() / 2, null);
+        }
+        
+        // Title
+        g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 40f));
+        FontMetrics titleFm = g2d.getFontMetrics();
+        String title = "Game Over";
+        int titleX = (1920 - titleFm.stringWidth(title)) / 2;
+        int titleY = 420;
+        g2d.setColor(Color.WHITE);
+        g2d.drawString(title, titleX, titleY);
+        
+        // Image buttons (top-left anchored), no stretching
+        BufferedImage btnImg = Utilities.load("pause_button", 1.0, 1.0);
+        int btnW = btnImg != null ? btnImg.getWidth() : 220;
+        int btnH = btnImg != null ? btnImg.getHeight() : 56;
+        int bx = 850; // chosen left offset for buttons
+        int topY = 520; // Moved down since only one button
+        
+        g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 28f));
+        FontMetrics fm = g2d.getFontMetrics();
+        
+        // Draw single Menu button
+        if (btnImg != null) g2d.drawImage(btnImg, bx, topY, null);
+        
+        // Text overlay centered relative to button image size
+        String menuText = "Menu";
+        g2d.setColor(Color.WHITE);
+        
+        g2d.drawString(menuText, bx + (btnW - fm.stringWidth(menuText)) / 2,
+                topY + (btnH - (fm.getAscent() + fm.getDescent())) / 2 + fm.getAscent());
+        
+        Rectangle menuRect = new Rectangle(bx, topY, btnW, btnH);
+        
+        if (gamma.m1) {
+            if (menuRect.contains(gamma.mx, gamma.my)) {
+                gamma.goToMainMenu();
+                gamma.m1 = false;
             }
         }
     }

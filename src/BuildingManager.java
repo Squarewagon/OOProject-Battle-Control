@@ -107,8 +107,9 @@ public class BuildingManager {
         Building target = Location.buildingOccupancy.get(new Point(cellX, cellY));
         if (target == null) return false;
         
-        if (sellMode && !(target instanceof Headquarter)) {
+        if (sellMode) {
             // Delegate sell logic to Gamma since it has access to Icon class
+            // sellBuilding() will handle the HQ check and error message
             return gamma.sellBuilding(target);
         } else if (repairMode) {
             // Toggle repair mode on the building

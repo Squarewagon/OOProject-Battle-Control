@@ -26,8 +26,9 @@ public class InputManager {
      * Handle key released events (primary input trigger point)
      */
     public void handleKeyReleased(KeyEvent e) {
-        // Ignore non-ESC keys when paused
-        if (gamma.currentState == Gamma.GameState.PAUSED && e.getKeyCode() != KeyEvent.VK_ESCAPE) {
+        // Ignore non-ESC keys when paused or game over
+        if ((gamma.currentState == Gamma.GameState.PAUSED || gamma.currentState == Gamma.GameState.GAME_OVER) 
+            && e.getKeyCode() != KeyEvent.VK_ESCAPE) {
             return;
         }
         
@@ -45,6 +46,7 @@ public class InputManager {
                     gamma.gameRunning = true; // resume updates
                     gamma.lastUpdateTime = System.currentTimeMillis();
                 }
+                // GAME_OVER state: ESC does nothing, must click Menu button
                 break;
                 
             case KeyEvent.VK_Z:

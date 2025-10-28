@@ -21,7 +21,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
 
     // Simple game state for menus
     enum GameState {
-        MAIN_MENU, MAP_SELECT, MODE_SELECT, IN_GAME, PAUSED
+        MAIN_MENU, MAP_SELECT, MODE_SELECT, IN_GAME, PAUSED, GAME_OVER
     }
 
     GameState currentState = GameState.MAIN_MENU;
@@ -415,6 +415,19 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
             // Update game objects (instances, wave, etc.)
             gameLoop.updateGameObjects(deltaTime, Instances, iQueue);
 
+            // Check if HQ is destroyed - if so, trigger GAME_OVER
+            boolean hqAlive = false;
+            for (Instance instance : Instances) {
+                if (instance instanceof Headquarter && instance.isAlive()) {
+                    hqAlive = true;
+                    break;
+                }
+            }
+            if (!hqAlive) {
+                currentState = GameState.GAME_OVER;
+                gameRunning = false;
+            }
+
             // Update build mode placement
             if (buildMode && m1 && buildingToBuild != null) {
                 int cellX = mx / Location.cellSize;
@@ -481,8 +494,6 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
             m2Timer++;
     }
 
-    // DEPRECATED: updateGame logic now handled by GameLoop and actionPerformed
-
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
@@ -523,6 +534,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
      */
     public boolean sellBuilding(Building building) {
         if (building instanceof Headquarter) {
+            error("no");
             return false; // Cannot sell HQ
         }
 
@@ -1061,11 +1073,6 @@ abstract class Building extends Instance {
             for (Point occupied : occupiedCells) {
                 Location.buildingOccupancy.remove(occupied);
             }
-        }
-
-        if (this instanceof Headquarter) {
-            System.exit(404);
-            System.err.println("rip BOZO");
         }
 
         turrets.clear();

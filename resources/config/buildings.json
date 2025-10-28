@@ -7,7 +7,7 @@
     "buildRange": 6,
     "width": 4,
     "height": 4,
-    "health": 2000,
+    "health": 100,
     "power": 25,
     "description": "Don't let me down",
     "imageName": "headquarter",

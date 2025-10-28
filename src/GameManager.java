@@ -11,7 +11,6 @@ public class GameManager {
     
     private List<Instance> instances;
     private List<Instance> instanceQueue; // Buffer for new instances added during updates
-    private MapManager currentMap;
     private ConfigManager configManager;
     
     private int power;
@@ -21,7 +20,6 @@ public class GameManager {
     public GameManager() {
         this.instances = new ArrayList<>();
         this.instanceQueue = new ArrayList<>();
-        this.currentMap = new MapManager();
         this.configManager = new ConfigManager();
         
         this.power = 0;
@@ -148,16 +146,6 @@ public class GameManager {
         this.wave++;
     }
     
-    // ==================== MAP ====================
-    
-    public MapManager getMap() {
-        return currentMap;
-    }
-    
-    public void setMap(MapManager map) {
-        this.currentMap = map;
-    }
-    
     // ==================== CONFIG ====================
     
     public ConfigManager getConfigManager() {
@@ -175,7 +163,6 @@ public class GameManager {
         power = 0;
         kromer = 1000;
         wave = 0;
-        currentMap.clear();
     }
     
     /**
