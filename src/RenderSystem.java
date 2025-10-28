@@ -586,14 +586,7 @@ public class RenderSystem {
             }
             gamma.m1 = false;
         }
-        
-        g2d.setFont(Utilities.loadFont("Romanov", Font.PLAIN, 15f));
-        g2d.setStroke(new BasicStroke(1)); // information about the cursor location
-        g2d.drawString(gamma.mx + ", " + gamma.my, gamma.mx + 20, gamma.my + 50);
-        // also draw cell coordinates
-        int cellX = gamma.mx / Location.cellSize;
-        int cellY = gamma.my / Location.cellSize;
-        g2d.drawString("Cell: " + cellX + ", " + cellY, gamma.mx + 20, gamma.my + 70);
+
     }
     
     private void renderErrorMessage(Graphics2D g2d) {

@@ -3,6 +3,7 @@ import java.awt.image.BufferedImage;
 import javax.imageio.ImageIO;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 
 // cmd to convert gif to png frames at 60 fps
 // ffmpeg -i INPUTNAME.mov -r 60 FRAMENAME%03d.png
@@ -14,15 +15,41 @@ public class Utilities {
     
     // Font cache to avoid reloading fonts
     private static java.util.HashMap<String, java.awt.Font> fontCache = new java.util.HashMap<>();
+    
+    // Image cache to avoid reloading images from JAR
+    private static java.util.HashMap<String, BufferedImage> imageCache = new java.util.HashMap<>();
+    
+    /**
+     * Load an image from resources (works both in development and in JAR)
+     */
+    private static BufferedImage loadImageResource(String path) throws IOException {
+        // Try loading from JAR first
+        InputStream is = Utilities.class.getClassLoader().getResourceAsStream(path);
+        if (is != null) {
+            return ImageIO.read(is);
+        }
+        // Fall back to file system (for development)
+        return ImageIO.read(new File(path));
+    }
+    
     public static BufferedImage load(String name, double scaleX, double scaleY) {
+        // Create cache key including scale factors
+        String cacheKey = name + "_" + scaleX + "_" + scaleY;
+        
+        // Check cache first
+        BufferedImage cached = imageCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        
         BufferedImage image = null;
         try {
             // Try to load the specific image first
-            image = ImageIO.read(new File(imgPath + name + ".png"));
+            image = loadImageResource(imgPath + name + ".png");
         } catch (IOException e) {
             // If not found, try to load default.png
             try {
-                image = ImageIO.read(new File(imgPath + "default.png"));
+                image = loadImageResource(imgPath + "default.png");
                 System.out.println("Image not found: " + name + ".png, using default.png");
             } catch (IOException e2) {
                 System.err.println("Default image also not found.");
@@ -37,6 +64,9 @@ public class Utilities {
         g2d.drawImage(image, 0, 0, width, height, null);
         g2d.dispose();
         
+        // Cache the scaled image
+        imageCache.put(cacheKey, scaledImage);
+        
         return scaledImage;
     }
 
@@ -50,6 +80,11 @@ public class Utilities {
         private boolean loop = false;
         private double frameTimer = 0.0;
         private static final double FRAME_DURATION = 1.0 / 60.0; // 60 FPS animation speed
+        
+        // Cache for loaded frames to avoid reloading from JAR
+        private java.util.HashMap<Integer, BufferedImage> frameCache = new java.util.HashMap<>();
+        private java.util.HashMap<Integer, BufferedImage> scaledFrameCache = new java.util.HashMap<>();
+        private int maxFrameChecked = 0;
 
         public Animation(String name, int x, int y, double scaleX, double scaleY, Instance parent, boolean loop) {
             this.name = name;
@@ -73,18 +108,36 @@ public class Utilities {
             while (frameTimer >= FRAME_DURATION) {
                 frameTimer -= FRAME_DURATION;
                 
-                // Check if next frame exists
-                String nextFrameName = name + String.format("%03d", currentFrame + 1);
-                try {
-                    ImageIO.read(new File(animPath + name + "/" + nextFrameName + ".png"));
-                    // Next frame exists, increment
-                    currentFrame++;
-                } catch (IOException e) {
-                    if (loop) {
-                        currentFrame = 1; // Loop back to first frame
+                // Check if next frame exists (only check once per frame number)
+                int nextFrame = currentFrame + 1;
+                if (nextFrame > maxFrameChecked) {
+                    String nextFrameName = name + String.format("%03d", nextFrame);
+                    try {
+                        BufferedImage frame = loadImageResource(animPath + name + "/" + nextFrameName + ".png");
+                        frameCache.put(nextFrame, frame);
+                        maxFrameChecked = nextFrame;
+                        currentFrame = nextFrame;
+                    } catch (IOException e) {
+                        // No more frames
+                        if (loop) {
+                            currentFrame = 1; // Loop back to first frame
+                        } else {
+                            alive = false;
+                            break;
+                        }
+                    }
+                } else {
+                    // Frame existence already checked
+                    if (frameCache.containsKey(nextFrame)) {
+                        currentFrame = nextFrame;
                     } else {
-                        alive = false;
-                        break;
+                        // Reached end of animation
+                        if (loop) {
+                            currentFrame = 1;
+                        } else {
+                            alive = false;
+                            break;
+                        }
                     }
                 }
             }
@@ -93,27 +146,46 @@ public class Utilities {
         public void render(java.awt.Graphics2D g) {
             if (!alive) return;
 
-            // Load and render current frame
-            String frameName = name + String.format("%03d", currentFrame);
-            try {
-            BufferedImage frame = ImageIO.read(new File(animPath + name + "/" + frameName + ".png"));
+            // Check if we have the scaled frame cached
+            BufferedImage scaledFrame = scaledFrameCache.get(currentFrame);
+            if (scaledFrame != null) {
+                // Use cached scaled frame
+                g.drawImage(scaledFrame, x - scaledFrame.getWidth() / 2, y - scaledFrame.getHeight() / 2, null);
+                return;
+            }
 
-            // Scale the frame
+            // Get cached frame or load it
+            BufferedImage frame = frameCache.get(currentFrame);
+            if (frame == null) {
+                // Load and cache the frame
+                String frameName = name + String.format("%03d", currentFrame);
+                try {
+                    frame = loadImageResource(animPath + name + "/" + frameName + ".png");
+                    frameCache.put(currentFrame, frame);
+                    if (currentFrame > maxFrameChecked) {
+                        maxFrameChecked = currentFrame;
+                    }
+                } catch (IOException e) {
+                    // Frame doesn't exist, mark as dead
+                    alive = false;
+                    return;
+                }
+            }
+
+            // Scale the frame and cache it
             int width = Math.max(1, (int)(frame.getWidth() * scaleX));
             int height = Math.max(1, (int)(frame.getHeight() * scaleY));
 
-            BufferedImage scaledFrame = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            scaledFrame = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
             java.awt.Graphics2D g2d = scaledFrame.createGraphics();
             g2d.drawImage(frame, 0, 0, width, height, null);
             g2d.dispose();
+            
+            // Cache the scaled frame
+            scaledFrameCache.put(currentFrame, scaledFrame);
 
             // Draw at specified position
             g.drawImage(scaledFrame, x - scaledFrame.getWidth() / 2, y - scaledFrame.getHeight() / 2, null);
-
-            } catch (IOException e) {
-            // Frame doesn't exist, mark as dead
-            alive = false;
-            }
         }
 
         public boolean isAlive() {
@@ -145,8 +217,15 @@ public class Utilities {
         
         java.awt.Font font = null;
         try {
-            // Try to load custom font from file
-            java.awt.Font baseFont = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, new File(fontPath + fontName + ".ttf"));
+            // Try to load custom font from JAR or file system
+            java.awt.Font baseFont;
+            InputStream fontStream = Utilities.class.getClassLoader().getResourceAsStream(fontPath + fontName + ".ttf");
+            if (fontStream != null) {
+                baseFont = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, fontStream);
+            } else {
+                // Fall back to file system (for development)
+                baseFont = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, new File(fontPath + fontName + ".ttf"));
+            }
             font = baseFont.deriveFont(size);
             
             // Register the font with the graphics environment (optional but recommended)

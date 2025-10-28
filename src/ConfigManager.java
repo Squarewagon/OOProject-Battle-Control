@@ -1,5 +1,8 @@
 import java.io.File;
 import java.io.FileReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.util.HashMap;
 import java.util.Map;
 import com.google.gson.Gson;
@@ -23,6 +26,23 @@ public class ConfigManager {
     private Map<String, EnemyStats> enemyStats;
     private Map<String, WeaponDefinition> weaponStats;
     private boolean loaded = false;
+    
+    /**
+     * Load a config file from JAR or file system
+     */
+    private Reader getConfigReader(String filename) throws Exception {
+        // Try loading from JAR first
+        InputStream is = getClass().getClassLoader().getResourceAsStream(CONFIG_PATH + filename);
+        if (is != null) {
+            return new InputStreamReader(is);
+        }
+        // Fall back to file system (for development)
+        File file = new File(CONFIG_PATH + filename);
+        if (!file.exists()) {
+            throw new Exception("Config file not found: " + filename);
+        }
+        return new FileReader(file);
+    }
     
     public ConfigManager() {
         this.buildingStats = new HashMap<>();
@@ -55,13 +75,7 @@ public class ConfigManager {
      * Load weapon configuration from weapons.json
      */
     private void loadWeaponConfigs() throws Exception {
-        File file = new File(CONFIG_PATH + "weapons.json");
-        if (!file.exists()) {
-            System.err.println("[ConfigManager] weapons.json not found at " + file.getAbsolutePath());
-            return;
-        }
-        
-        try (FileReader reader = new FileReader(file)) {
+        try (Reader reader = getConfigReader("weapons.json")) {
             JsonArray weaponsArray = gson.fromJson(reader, JsonArray.class);
             
             for (int i = 0; i < weaponsArray.size(); i++) {
@@ -76,13 +90,7 @@ public class ConfigManager {
      * Load building configuration from buildings.json
      */
     private void loadBuildingConfigs() throws Exception {
-        File file = new File(CONFIG_PATH + "buildings.json");
-        if (!file.exists()) {
-            System.err.println("[ConfigManager] buildings.json not found at " + file.getAbsolutePath());
-            return;
-        }
-        
-        try (FileReader reader = new FileReader(file)) {
+        try (Reader reader = getConfigReader("buildings.json")) {
             JsonArray buildingsArray = gson.fromJson(reader, JsonArray.class);
             
             for (int i = 0; i < buildingsArray.size(); i++) {
@@ -97,13 +105,7 @@ public class ConfigManager {
      * Load enemy configuration from enemies.json
      */
     private void loadEnemyConfigs() throws Exception {
-        File file = new File(CONFIG_PATH + "enemies.json");
-        if (!file.exists()) {
-            System.err.println("[ConfigManager] enemies.json not found at " + file.getAbsolutePath());
-            return;
-        }
-        
-        try (FileReader reader = new FileReader(file)) {
+        try (Reader reader = getConfigReader("enemies.json")) {
             JsonArray enemiesArray = gson.fromJson(reader, JsonArray.class);
             
             for (int i = 0; i < enemiesArray.size(); i++) {

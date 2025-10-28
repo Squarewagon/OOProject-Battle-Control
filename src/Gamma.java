@@ -34,12 +34,12 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
 
     int uiMid = 1740; // midpoint of the UI panel at 1560 + 180 or 1920 - 180
 
-    private static GameManager gameManager; // REFACTORED: Central game state
-    private static GameLoop gameLoop; // REFACTORED: Timing and update logic
-    private InputManager inputManager; // REFACTORED: Input handling
-    private RenderSystem renderSystem; // REFACTORED: Rendering logic
-    private BuildingManager buildingManager; // REFACTORED: Build/repair/sell logic
-    private static List<Instance> Instances; // Delegate to gameManager
+    private static GameManager gameManager; // Central game state
+    private static GameLoop gameLoop; // Timing and update logic
+    private InputManager inputManager; // Input handling
+    private RenderSystem renderSystem; // Rendering logic
+    private BuildingManager buildingManager; // Build/repair/sell logic
+    private static List<Instance> Instances;
     private static List<Instance> iQueue = new ArrayList<>(); // Buffer for new instances
     static List<Icon> productive = new ArrayList<>();
     static List<Icon> offensive = new ArrayList<>();
@@ -177,9 +177,9 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
             gameManager = new GameManager(); // Initialize once
         if (gameLoop == null)
             gameLoop = new GameLoop(gameManager); // Initialize once
-        inputManager = new InputManager(this); // REFACTORED: Initialize input manager
-        renderSystem = new RenderSystem(this); // REFACTORED: Initialize render system
-        buildingManager = new BuildingManager(this); // REFACTORED: Initialize building manager
+        inputManager = new InputManager(this); // Initialize input manager
+        renderSystem = new RenderSystem(this); // Initialize render system
+        buildingManager = new BuildingManager(this); // Initialize building manager
 
         // Load all configuration from JSON files
         gameManager.getConfigManager().loadConfigs();
@@ -843,8 +843,8 @@ abstract class Instance implements Elements.Renderable {
     ArrayList<Turret> turrets = new ArrayList<>();
     ArrayList<Weapon> weapons = new ArrayList<>();
     ArrayList<Utilities.Animation> anims = new ArrayList<>();
-    int zIndex = 3; // Default Z-index (higher than buildings, for buildings/enemies)
     ArrayList<Hitbox> hitboxes = new ArrayList<>(); // Multiple hitboxes per instance
+    int zIndex = 3; // Default Z-index (higher than buildings, for buildings/enemies)
     double timer = 0; // general purpose timer
     double trueTimer = 0; // general purpose timer that isn't affected by time dilation
     double healthMult = 1, damageMult = 1, speedMult = 1, rangeMult = 1, rofMult = 1;

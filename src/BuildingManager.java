@@ -18,7 +18,6 @@ import java.util.HashMap;
  */
 public class BuildingManager {
     
-    // Repair and Sell modes (Build mode stays in Gamma.buildMode for now)
     private boolean repairMode = false;
     private boolean sellMode = false;
     
