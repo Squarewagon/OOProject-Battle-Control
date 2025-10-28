@@ -1,0 +1,387 @@
+@startuml Gamma Tower Defense - Class Diagram
+
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam classBackgroundColor #F0F0F0
+skinparam classBorderColor #333333
+
+' ============================================================================
+' CORE ENGINE
+' ============================================================================
+
+package "Core Engine" {
+    class Gamma {
+        -gameState: GameState
+        -currentState: enum
+        -gameRunning: boolean
+        -fastForward: boolean
+        --
+        +startGame()
+        +goToMainMenu()
+        +actionPerformed()
+        +sellBuilding()
+        +refresh()
+    }
+
+    class GameManager {
+        -instances: List<Instance>
+        -instanceQueue: List<Instance>
+        -power: int
+        -kromer: int
+        -wave: int
+        -configManager: ConfigManager
+        --
+        +getInstance(): GameManager
+        +addInstance()
+        +flushInstanceQueue()
+        +getInstances(): List<Instance>
+        +removeDeadInstances()
+        +canPlaceBuilding()
+        +getPower/setPower()
+        +getKromer/setKromer()
+        +initializeKromerForMode()
+    }
+
+    class GameLoop {
+        -lastUpdateTime: long
+        -timer: int
+        -gameManager: GameManager
+        --
+        +calculateDeltaTime(): float
+        +tick()
+        +getTimer(): int
+        +updateGameObjects()
+        +getDesiredCursor(): String
+    }
+
+    Gamma --> GameManager: uses singleton
+    Gamma --> GameLoop: delegates updates
+    GameLoop --> GameManager: reads/modifies state
+}
+
+' ============================================================================
+' MANAGER SYSTEMS
+' ============================================================================
+
+package "Manager Systems" {
+    class RenderSystem {
+        -gamma: Gamma
+        -menuBackgroundImg: BufferedImage
+        --
+        +render()
+        -renderMenus()
+        -renderGameArea()
+        -renderUIPanel()
+        -renderBuildMode()
+        -renderPausedGame()
+        -renderGameOver()
+    }
+
+    class InputManager {
+        -gamma: Gamma
+        --
+        +handleKeyReleased()
+        +handleMousePressed()
+        +handleMouseMoved()
+        +handleMouseClicked()
+    }
+
+    class BuildingManager {
+        -repairMode: boolean
+        -sellMode: boolean
+        -gamma: Gamma
+        --
+        +setRepairMode()
+        +setSellMode()
+        +processCellInteraction()
+        +clearBuildMode()
+        +clearAllModes()
+    }
+
+    class ConfigManager {
+        -buildingStats: Map<String, BuildingStats>
+        -enemyStats: Map<String, EnemyStats>
+        -weaponStats: Map<String, WeaponDefinition>
+        -loaded: boolean
+        --
+        +loadConfigs()
+        +getAllBuildingStats()
+        +getAllEnemyStats()
+        +getAllWeaponStats()
+    }
+
+    Gamma --> RenderSystem: delegates rendering
+    Gamma --> InputManager: delegates input
+    Gamma --> BuildingManager: delegates build/repair/sell
+    GameManager --> ConfigManager: loads configs
+}
+
+' ============================================================================
+' GAME OBJECTS - INSTANCES
+' ============================================================================
+
+package "Game Objects" {
+    abstract class Instance {
+        #x: int
+        #y: int
+        #exactX: double
+        #exactY: double
+        #health: int
+        #maxHealth: int
+        #alive: boolean
+        #turrets: List<Turret>
+        #weapons: List<Weapon>
+        #anims: List<Animation>
+        #hitboxes: List<Hitbox>
+        --
+        +{abstract}update()
+        +{abstract}render()
+        +{abstract}destroy()
+        +isAlive(): boolean
+        +updateHitboxes()
+    }
+
+    abstract class Building {
+        #width: int
+        #height: int
+        #power: int
+        #repairing: boolean
+        #occupiedCells: List<Point>
+        --
+        +setupBuildingLayout()
+        +loadFromConfig()
+        -{abstract}onLowPower()
+    }
+
+    abstract class Productive
+
+    abstract class Offensive
+
+    class Headquarter {
+        --
+        +generate kromer
+        +primary defense target
+    }
+
+    class PowerPlant {
+        --
+        +generates power
+        +costs resources
+    }
+
+    class OilRig {
+        --
+        +generates kromer
+        +costs power
+    }
+
+    class RadarDish {
+        --
+        +boosts range x1.25
+        +costs power
+    }
+
+    class HeavyOrdnanceCenter {
+        --
+        +production support
+        +costs power
+    }
+
+    class AutoCannon {
+        --
+        +rapid fire turret
+        +anti-light armor
+    }
+
+    class Artillery {
+        --
+        +area damage
+        +anti-heavy armor
+    }
+
+    abstract class Enemy {
+        #pathIndex: int
+        #speed: double
+        #kromerReward: int
+        #weight: Map<String,Integer>
+        --
+        +getWeight()
+        -loadFromConfig()
+        -findBuilding()
+    }
+
+    class Recon {
+        --
+        +fast, low health
+    }
+
+    class Kodiak {
+        --
+        +slow, high health
+    }
+
+    class Projectile {
+        #projectileType: String
+        #isTargeting: boolean
+        #damage: int
+        --
+        +predict()
+        +checkCollision()
+    }
+
+    Instance <|-- Building
+    Instance <|-- Enemy
+    Instance <|-- Projectile
+
+    Building <|-- Productive
+    Building <|-- Offensive
+
+    Productive <|-- Headquarter
+    Productive <|-- PowerPlant
+    Productive <|-- OilRig
+    Productive <|-- RadarDish
+    Productive <|-- HeavyOrdnanceCenter
+
+    Offensive <|-- AutoCannon
+    Offensive <|-- Artillery
+
+    Enemy <|-- Recon
+    Enemy <|-- Kodiak
+}
+
+' ============================================================================
+' SUPPORTING CLASSES
+' ============================================================================
+
+package "Supporting Classes" {
+    class Turret {
+        #parent: Instance
+        #offsetX: int
+        #offsetY: int
+        #range: double
+        #facing: double
+        #eTarget: Enemy
+        #bTarget: Point
+        --
+        +update()
+        +findEnemy()
+        +findBuilding()
+        +predict()
+    }
+
+    class Weapon {
+        #turret: Turret
+        #damage: int
+        #rof: double
+        #burst: int
+        #projectileType: String
+        --
+        +update()
+        +fire()
+    }
+
+    class Hitbox {
+        #offsetX: int
+        #offsetY: int
+        #width: double
+        #height: double
+        #corners: List<Point>
+        --
+        +update()
+    }
+
+    class Utilities.Animation {
+        #name: String
+        #currentFrame: int
+        #frameTimer: double
+        #loop: boolean
+        --
+        +update()
+    }
+
+    class Location {
+        +{static}cellSize: int
+        +{static}cols: int
+        +{static}rows: int
+        +{static}occupancy: List<Point>
+        +{static}buildingOccupancy: Map<Point,Building>
+        +{static}adjacency: List<Point>
+        +{static}path: List<Point>
+        --
+        #mapPath()
+        #pathExists()
+    }
+
+    class BuildingStats {
+        +name: String
+        +cost: int
+        +health: int
+        +width: int
+        +height: int
+        +turrets: List<TurretStats>
+        +prerequisites: List<String>
+    }
+
+    class EnemyStats {
+        +name: String
+        +health: int
+        +maxSpeed: double
+        +kromerReward: int
+        +turrets: List<TurretStats>
+    }
+
+    class WaveManager {
+        +{static}waveActive: boolean
+        +{static}waveCompleted: boolean
+        +{static}currentCycle: int
+        --
+        +{static}startWave()
+        +{static}update()
+        +{static}updateWaveCompletion()
+    }
+
+    Turret --> Weapon: mounts
+    Instance "1" *-- "*" Turret
+    Instance "1" *-- "*" Weapon
+    Instance "1" *-- "*" Hitbox
+    Instance "1" *-- "*" Utilities.Animation
+}
+
+' ============================================================================
+' GAME STATE & UI
+' ============================================================================
+
+package "Game State" {
+    enum GameState {
+        MAIN_MENU
+        MAP_SELECT
+        MODE_SELECT
+        IN_GAME
+        PAUSED
+        GAME_OVER
+    }
+
+    class Gamma.Icon {
+        +stats: BuildingStats
+        +building: boolean
+        +constructionTimer: double
+        +ready: boolean
+        --
+        +construct()
+        +update()
+    }
+}
+
+Gamma --> GameState: manages state
+
+' ============================================================================
+' RELATIONSHIPS
+' ============================================================================
+
+GameManager --> Instance: manages collection
+GameManager --> ConfigManager: loads all configs
+RenderSystem --> Instance: renders all
+InputManager --> BuildingManager: delegates modes
+BuildingManager --> Building: manages operations
+
+@enduml
