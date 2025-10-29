@@ -21,10 +21,10 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
 
     // Simple game state for menus
     enum GameState {
-        MAIN_MENU, MAP_SELECT, MODE_SELECT, IN_GAME, PAUSED, GAME_OVER
+        LOADING, MAIN_MENU, MAP_SELECT, MODE_SELECT, IN_GAME, PAUSED, GAME_OVER
     }
 
-    GameState currentState = GameState.MAIN_MENU;
+    GameState currentState = GameState.LOADING;
     String selectedMap = "plain"; // future: support more maps
     static public String selectedMode = "normal"; // normal | survival | challenge | sandbox
 
@@ -39,6 +39,7 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
     private InputManager inputManager; // Input handling
     private RenderSystem renderSystem; // Rendering logic
     private BuildingManager buildingManager; // Build/repair/sell logic
+    private AssetLoader assetLoader; // Asset loading system
     private static List<Instance> Instances;
     private static List<Instance> iQueue = new ArrayList<>(); // Buffer for new instances
     static List<Icon> productive = new ArrayList<>();
@@ -184,6 +185,9 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         // Load all configuration from JSON files
         gameManager.getConfigManager().loadConfigs();
 
+        // Initialize asset loader for pre-caching all assets
+        assetLoader = new AssetLoader(this);
+
         setPreferredSize(new Dimension(1920, 1080));
         setBackground(Color.BLACK);
         setDoubleBuffered(true); // Important for smooth rendering
@@ -220,6 +224,10 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
 
     public BuildingManager getBuildingManager() {
         return buildingManager;
+    }
+
+    public AssetLoader getAssetLoader() {
+        return assetLoader;
     }
 
     public void startGame() {
@@ -391,6 +399,20 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
         return true;
     }
 
+    /**
+     * Check if at least one living instance of a given building type exists
+     */
+    public static boolean hasLivingBuilding(String buildingClassName) {
+        for (Instance instance : Instances) {
+            if (instance instanceof Building && instance.isAlive()) {
+                if (instance.getClass().getSimpleName().equalsIgnoreCase(buildingClassName)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     public static List<Instance> getInstances() {
         return new ArrayList<>(Instances);
     }
@@ -398,6 +420,17 @@ public class Gamma extends JPanel implements ActionListener, MouseListener, Mous
     // This is called every 16.67ms (60 times per second)
     @Override
     public void actionPerformed(ActionEvent e) {
+        // Handle loading state - update asset loader
+        if (currentState == GameState.LOADING) {
+            if (assetLoader.update()) {
+                // Loading complete, transition to main menu
+                currentState = GameState.MAIN_MENU;
+                System.out.println("[Game] Asset loading complete, transitioning to main menu");
+            }
+            repaint(); // Keep rendering during loading
+            return;
+        }
+
         // Use GameLoop to calculate delta time and update game
         float deltaTime = gameLoop.calculateDeltaTime(fastForward, gameManager.getWave());
         gameLoop.tick();
@@ -1077,37 +1110,45 @@ abstract class Building extends Instance {
         alive = false;
 
         // Cancel construction of any buildings that depend on this one as a
-        // prerequisite
+        // prerequisite, but ONLY if the prerequisite is no longer satisfied
         String destroyedBuildingName = this.getClass().getSimpleName();
         Gamma gamma = Gamma.getInstance();
 
         // Check productive buildings
         for (Gamma.Icon icon : Gamma.productive) {
             if (icon.stats.prerequisites.contains(destroyedBuildingName) && (icon.building || icon.ready)) {
-                // Refund full cost (building under construction hasn't taken damage)
-                int refund = icon.stats.cost;
-                GameManager.getInstance().addKromer(refund);
+                // Only cancel construction if the prerequisite is no longer available
+                // (i.e., no other living instances of this building exist)
+                if (!Gamma.hasLivingBuilding(destroyedBuildingName)) {
+                    // Refund full cost (building under construction hasn't taken damage)
+                    int refund = icon.stats.cost;
+                    GameManager.getInstance().addKromer(refund);
 
-                // Reset construction state
-                icon.building = false;
-                icon.ready = false;
-                icon.constructionTimer = 0.0;
-                gamma.proOnCons = false;
+                    // Reset construction state
+                    icon.building = false;
+                    icon.ready = false;
+                    icon.constructionTimer = 0.0;
+                    gamma.proOnCons = false;
+                }
             }
         }
 
         // Check offensive buildings
         for (Gamma.Icon icon : Gamma.offensive) {
             if (icon.stats.prerequisites.contains(destroyedBuildingName) && (icon.building || icon.ready)) {
-                // Refund full cost (building under construction hasn't taken damage)
-                int refund = icon.stats.cost;
-                GameManager.getInstance().addKromer(refund);
+                // Only cancel construction if the prerequisite is no longer available
+                // (i.e., no other living instances of this building exist)
+                if (!Gamma.hasLivingBuilding(destroyedBuildingName)) {
+                    // Refund full cost (building under construction hasn't taken damage)
+                    int refund = icon.stats.cost;
+                    GameManager.getInstance().addKromer(refund);
 
-                // Reset construction state
-                icon.building = false;
-                icon.ready = false;
-                icon.constructionTimer = 0.0;
-                gamma.offOnCons = false;
+                    // Reset construction state
+                    icon.building = false;
+                    icon.ready = false;
+                    icon.constructionTimer = 0.0;
+                    gamma.offOnCons = false;
+                }
             }
         }
 
@@ -2764,6 +2805,7 @@ class WaveManager {
         // format: addWave(waveNumber, w(EnemyClass.class, count, spawnInterval, delay),
         // ...);
         addWave(1,
+                // w(Kodiak.class, 1, 1.0, 0.0), // testing purpose
                 w(Recon.class, 5, 2.0, 0.0)
                 );
 

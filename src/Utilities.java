@@ -58,9 +58,10 @@ public class Utilities {
         int width = Math.max(1, (int)(image.getWidth() * scaleX));
         int height = Math.max(1, (int)(image.getHeight() * scaleY));
 
-        // Create scaled image
+        // Create scaled image with high-quality interpolation
         BufferedImage scaledImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         java.awt.Graphics2D g2d = scaledImage.createGraphics();
+        g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
         g2d.drawImage(image, 0, 0, width, height, null);
         g2d.dispose();
         
@@ -81,10 +82,14 @@ public class Utilities {
         private double frameTimer = 0.0;
         private static final double FRAME_DURATION = 1.0 / 60.0; // 60 FPS animation speed
         
-        // Cache for loaded frames to avoid reloading from JAR
-        private java.util.HashMap<Integer, BufferedImage> frameCache = new java.util.HashMap<>();
-        private java.util.HashMap<Integer, BufferedImage> scaledFrameCache = new java.util.HashMap<>();
-        private int maxFrameChecked = 0;
+        // GLOBAL shared cache across all animations - prevents duplicate loading
+        private static java.util.HashMap<String, java.util.HashMap<Integer, BufferedImage>> globalFrameCache = 
+            new java.util.HashMap<>();
+        private static java.util.HashMap<String, Integer> globalMaxFrameCount = new java.util.HashMap<>();
+        
+        // Per-instance scaled frame cache (much smaller since frames are pre-loaded)
+        private java.util.HashMap<String, BufferedImage> scaledFrameCache = new java.util.HashMap<>();
+        private static final int MAX_CACHED_SCALES = 3; // Limit scaled cache size
 
         public Animation(String name, int x, int y, double scaleX, double scaleY, Instance parent, boolean loop) {
             this.name = name;
@@ -95,6 +100,12 @@ public class Utilities {
             this.parent = parent;
             this.loop = loop;
             parent.anims.add(this);
+            
+            // Ensure this animation's frames are in the global cache
+            if (!globalFrameCache.containsKey(name)) {
+                globalFrameCache.put(name, new java.util.HashMap<Integer, BufferedImage>());
+                globalMaxFrameCount.put(name, 0);
+            }
         }
 
         public Animation(String name, int x, int y, Instance parent) {
@@ -108,26 +119,29 @@ public class Utilities {
             while (frameTimer >= FRAME_DURATION) {
                 frameTimer -= FRAME_DURATION;
                 
-                // Check if next frame exists (only check once per frame number)
+                // Check if next frame exists
                 int nextFrame = currentFrame + 1;
-                if (nextFrame > maxFrameChecked) {
+                java.util.HashMap<Integer, BufferedImage> frameCache = globalFrameCache.get(name);
+                int maxChecked = globalMaxFrameCount.get(name);
+                
+                if (nextFrame > maxChecked) {
                     String nextFrameName = name + String.format("%03d", nextFrame);
                     try {
                         BufferedImage frame = loadImageResource(animPath + name + "/" + nextFrameName + ".png");
                         frameCache.put(nextFrame, frame);
-                        maxFrameChecked = nextFrame;
+                        globalMaxFrameCount.put(name, nextFrame);
                         currentFrame = nextFrame;
                     } catch (IOException e) {
                         // No more frames
                         if (loop) {
-                            currentFrame = 1; // Loop back to first frame
+                            currentFrame = 1;
                         } else {
                             alive = false;
                             break;
                         }
                     }
                 } else {
-                    // Frame existence already checked
+                    // Frame was already checked
                     if (frameCache.containsKey(nextFrame)) {
                         currentFrame = nextFrame;
                     } else {
@@ -146,46 +160,50 @@ public class Utilities {
         public void render(java.awt.Graphics2D g) {
             if (!alive) return;
 
-            // Check if we have the scaled frame cached
-            BufferedImage scaledFrame = scaledFrameCache.get(currentFrame);
-            if (scaledFrame != null) {
-                // Use cached scaled frame
-                g.drawImage(scaledFrame, x - scaledFrame.getWidth() / 2, y - scaledFrame.getHeight() / 2, null);
-                return;
-            }
-
-            // Get cached frame or load it
+            java.util.HashMap<Integer, BufferedImage> frameCache = globalFrameCache.get(name);
             BufferedImage frame = frameCache.get(currentFrame);
+            
             if (frame == null) {
-                // Load and cache the frame
+                // Frame not pre-loaded, load it now (fallback for missed frames)
                 String frameName = name + String.format("%03d", currentFrame);
                 try {
                     frame = loadImageResource(animPath + name + "/" + frameName + ".png");
                     frameCache.put(currentFrame, frame);
-                    if (currentFrame > maxFrameChecked) {
-                        maxFrameChecked = currentFrame;
-                    }
                 } catch (IOException e) {
-                    // Frame doesn't exist, mark as dead
                     alive = false;
                     return;
                 }
             }
 
-            // Scale the frame and cache it
+            // Calculate scaled dimensions
             int width = Math.max(1, (int)(frame.getWidth() * scaleX));
             int height = Math.max(1, (int)(frame.getHeight() * scaleY));
 
-            scaledFrame = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-            java.awt.Graphics2D g2d = scaledFrame.createGraphics();
-            g2d.drawImage(frame, 0, 0, width, height, null);
-            g2d.dispose();
+            // Check if this exact scaled version is cached
+            String scaleKey = currentFrame + "_" + width + "_" + height;
+            BufferedImage scaledFrame = scaledFrameCache.get(scaleKey);
             
-            // Cache the scaled frame
-            scaledFrameCache.put(currentFrame, scaledFrame);
+            if (scaledFrame == null) {
+                if (scaleX == 1.0 && scaleY == 1.0) {
+                    // No scaling needed - use original
+                    scaledFrame = frame;
+                } else {
+                    // Create scaled version
+                    scaledFrame = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+                    java.awt.Graphics2D g2d = scaledFrame.createGraphics();
+                    g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                    g2d.drawImage(frame, 0, 0, width, height, null);
+                    g2d.dispose();
+                    
+                    // Only cache if we have room
+                    if (scaledFrameCache.size() < MAX_CACHED_SCALES) {
+                        scaledFrameCache.put(scaleKey, scaledFrame);
+                    }
+                }
+            }
 
             // Draw at specified position
-            g.drawImage(scaledFrame, x - scaledFrame.getWidth() / 2, y - scaledFrame.getHeight() / 2, null);
+            g.drawImage(scaledFrame, x - width / 2, y - height / 2, null);
         }
 
         public boolean isAlive() {

@@ -128,7 +128,7 @@ public class GameManager {
             this.kromer = 999999;
         } else {
             // normal, paper armor, blitzkrieg all start with 1000
-            this.kromer = 1000;
+            this.kromer = 1500;
         }
     }
     

@@ -44,6 +44,12 @@ public class RenderSystem {
         // Enable anti-aliasing for smoother graphics
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         
+        // Handle loading state first
+        if (gamma.currentState == Gamma.GameState.LOADING) {
+            renderLoadingScreen(g2d);
+            return;
+        }
+        
         // Menus vs. Game (treat PAUSED and GAME_OVER separately)
         if (gamma.currentState != Gamma.GameState.IN_GAME && gamma.currentState != Gamma.GameState.PAUSED 
             && gamma.currentState != Gamma.GameState.GAME_OVER) {
@@ -65,6 +71,69 @@ public class RenderSystem {
         renderGameArea(g2d);
         renderBuildMode(g2d);
         renderUIPanel(g2d);
+    }
+    
+    // ========== LOADING SCREEN RENDERING ==========
+    
+    private void renderLoadingScreen(Graphics2D g2d) {
+        // Draw background image with reduced opacity (same as menu background)
+        if (menuBackgroundImg != null) {
+            Composite orig = g2d.getComposite();
+            g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.3f));
+            g2d.drawImage(menuBackgroundImg, 0, 0, 1920, 1080, null);
+            g2d.setComposite(orig);
+        }
+        
+        // Draw semi-transparent overlay
+        g2d.setColor(new Color(0, 0, 0, 100));
+        g2d.fillRect(0, 0, 1920, 1080);
+        
+        // Get asset loader from Gamma instance
+        AssetLoader loader = gamma.getAssetLoader();
+        if (loader == null) {
+            return;
+        }
+        
+        // Draw "Loading..." text in the center
+        g2d.setFont(Utilities.loadFont("Romanov", Font.BOLD, 64f));
+        g2d.setColor(Color.WHITE);
+        String loadingText = "Loading...";
+        FontMetrics fm = g2d.getFontMetrics();
+        int textX = (1920 - fm.stringWidth(loadingText)) / 2;
+        int textY = 400;
+        g2d.drawString(loadingText, textX, textY);
+        
+        // Draw progress bar
+        int barWidth = 400;
+        int barHeight = 30;
+        int barX = (1920 - barWidth) / 2;
+        int barY = textY + 100;
+        
+        // Draw progress bar outline
+        g2d.setColor(Color.WHITE);
+        g2d.setStroke(new BasicStroke(2));
+        g2d.drawRect(barX, barY, barWidth, barHeight);
+        
+        // Draw filled progress
+        int progress = loader.getProgress();
+        int filledWidth = (barWidth * progress) / 100;
+        g2d.fillRect(barX + 1, barY + 1, filledWidth - 1, barHeight - 1);
+        
+        // Draw progress percentage text
+        g2d.setFont(Utilities.loadFont("Romanov", Font.PLAIN, 20f));
+        String progressText = loader.getProgressText() + " (" + progress + "%)";
+        FontMetrics pfm = g2d.getFontMetrics();
+        int progressTextX = (1920 - pfm.stringWidth(progressText)) / 2;
+        int progressTextY = barY + barHeight + 40;
+        g2d.drawString(progressText, progressTextX, progressTextY);
+        
+        // Draw current loading message
+        g2d.setFont(Utilities.loadFont("Romanov", Font.PLAIN, 16f));
+        String message = loader.getCurrentMessage();
+        FontMetrics mfm = g2d.getFontMetrics();
+        int messageX = (1920 - mfm.stringWidth(message)) / 2;
+        int messageY = progressTextY + 40;
+        g2d.drawString(message, messageX, messageY);
     }
     
     // ========== MENU RENDERING ==========
