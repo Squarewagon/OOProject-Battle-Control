@@ -967,11 +967,7 @@ abstract class Building extends Instance {
     private float nanoTimer = 0.7f; // counts down after build
 
     public Building(int x, int y, int health, int width, int height, int power) {
-        int calHealth = health;
-        if (Gamma.selectedMode.equals("paper armor")) {
-            calHealth = health / 2;
-        }
-        super(x, y, calHealth);
+        super(x, y, Gamma.selectedMode.equals("paper armor") ? health / 2 : health);
         this.width = width;
         this.height = height;
         setupBuildingLayout(width, height, power);
